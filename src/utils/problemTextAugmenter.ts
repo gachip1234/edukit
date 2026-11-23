@@ -88,6 +88,33 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
   }
   const has = (n: string) => defined.has(n);
 
+  // Điểm gốc AI đã cho TỌA ĐỘ (không suy ra từ lệnh). Với các yếu tố đề bài nêu RÕ
+  // (đường cao AD, phân giác AD, trung tuyến AM...), lệnh dựng từ đề bài được ưu tiên hơn
+  // lệnh của AI, vì AI đôi khi ghi sai thứ tự tham số (vd: phân giác từ B thay vì từ A).
+  const basePoints = new Set<string>();
+  for (const p of Array.isArray(data.points) ? data.points : []) {
+    const name = String(p?.name || p?.label || '').trim();
+    if (name) basePoints.add(name);
+  }
+  for (const c of Array.isArray(data.circles) ? data.circles : []) {
+    if (c?.center) basePoints.add(String(c.center).trim());
+  }
+  const isBase = (n: string) => basePoints.has(n);
+  /** Bỏ các lệnh của AI tạo ra điểm `name` (để thay bằng lệnh đúng theo đề bài) */
+  const dropAiProducers = (name: string) => {
+    for (let i = commands.length - 1; i >= 0; i--) {
+      const c = commands[i];
+      let produced = '';
+      if (typeof c === 'string') {
+        const m = c.match(/^\s*(MIDPOINT|PERPENDICULAR|INTERSECT|BISECTOR|TrungDiem|DuongCao|PhanGiac)\s*\(([^)]*)\)/i);
+        if (m) produced = m[2].split(',').pop()?.trim() || '';
+      } else if (c && typeof c === 'object' && ['MIDPOINT', 'PERPENDICULAR', 'INTERSECT', 'BISECTOR'].includes(String(c.cmd || '').toUpperCase())) {
+        produced = String(c.foot || c.name || '').trim();
+      }
+      if (produced === name) commands.splice(i, 1);
+    }
+  };
+
   // ---- Tam giác / tứ giác đã biết ----
   const triangles: string[][] = [];
   const quads: string[][] = [];
@@ -128,7 +155,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       const tri = triangleOf(vertex);
       if (!tri) continue;
       lines.push([vertex, foot]);
-      if (has(foot)) continue;
+      if (isBase(foot)) continue;
+      dropAiProducers(foot);
       const others = tri.filter((v) => v !== vertex);
       commands.push({ cmd: 'PERPENDICULAR', from: vertex, to: others, foot });
       defined.add(foot);
@@ -144,7 +172,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     ),
   )) {
     const [, from, foot, p1, p2] = m;
-    if (!has(from) || !has(p1) || !has(p2) || has(foot)) continue;
+    if (!has(from) || !has(p1) || !has(p2) || isBase(foot)) continue;
+    dropAiProducers(foot);
     commands.push({ cmd: 'PERPENDICULAR', from, to: [p1, p2], foot });
     defined.add(foot);
     lines.push([from, foot]);
@@ -160,7 +189,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       const tri = triangleOf(vertex);
       if (!tri) continue;
       lines.push([vertex, mid]);
-      if (!has(mid)) {
+      if (!isBase(mid)) {
+        dropAiProducers(mid);
         const others = tri.filter((v) => v !== vertex);
         commands.push({ cmd: 'MIDPOINT', of: others, name: mid });
         defined.add(mid);
@@ -182,7 +212,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       const tri = triangleOf(vertex);
       if (!tri) continue;
       lines.push([vertex, foot]);
-      if (has(foot)) continue;
+      if (isBase(foot)) continue;
+      dropAiProducers(foot);
       const others = tri.filter((v) => v !== vertex);
       commands.push({ cmd: 'BISECTOR', from: vertex, to: others, foot });
       defined.add(foot);
@@ -200,7 +231,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     const [p1, p2, foot] = [m[5], m[6], m[7]];
     if (!vertex || !has(vertex) || !has(p1) || !has(p2)) continue;
     lines.push([vertex, foot]);
-    if (has(foot)) continue;
+    if (isBase(foot)) continue;
+    dropAiProducers(foot);
     commands.push({ cmd: 'BISECTOR', from: vertex, to: [p1, p2], foot });
     defined.add(foot);
     added.push(`Phân giác ${vertex}${foot} cắt ${p1}${p2}`);
@@ -208,7 +240,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
 
   // ---- 5. Trung điểm ----
   const addMidpoint = (name: string, a: string, b: string) => {
-    if (has(name) || !has(a) || !has(b)) return;
+    if (isBase(name) || !has(a) || !has(b)) return;
+    dropAiProducers(name);
     commands.push({ cmd: 'MIDPOINT', of: [a, b], name });
     defined.add(name);
     added.push(`Trung điểm ${name} của ${a}${b}`);
@@ -279,7 +312,8 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     const name = m[1];
     const l1 = splitPair(m[2]);
     const l2 = splitPair(m[3]);
-    if (!l1 || !l2 || has(name) || ![...l1, ...l2].every(has)) continue;
+    if (!l1 || !l2 || isBase(name) || ![...l1, ...l2].every(has)) continue;
+    dropAiProducers(name);
     commands.push({ cmd: 'INTERSECT', obj1: l1, obj2: l2, name });
     defined.add(name);
     added.push(`Giao điểm ${name} của ${l1.join('')} và ${l2.join('')}`);

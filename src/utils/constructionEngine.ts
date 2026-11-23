@@ -125,13 +125,13 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
-      // 2b. BISECTOR(A, B, C, D): phân giác góc BAC cắt BC tại D
+      // 2b. BISECTOR(B, A, C, D): phân giác góc BAC (đỉnh A ở GIỮA, như cách viết "góc BAC") cắt BC tại D
       const bisMatch = trimmed.match(/^(?:BISECTOR|PhanGiac)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (bisMatch) {
         result.push({
           cmd: 'BISECTOR',
-          from: bisMatch[1],
-          to: [bisMatch[2], bisMatch[3]],
+          from: bisMatch[2],
+          to: [bisMatch[1], bisMatch[3]],
           foot: bisMatch[4],
         });
         continue;
@@ -387,6 +387,58 @@ function autoPlaceMissingBasePoints(
   return missing;
 }
 
+/** Điểm đầu vào / đầu ra của một lệnh dựng hình (dùng để sắp xếp thứ tự chạy) */
+function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[] } {
+  const one = (v: unknown) => (v ? [String(v).trim()] : []);
+  switch (c.cmd) {
+    case 'POINT':
+      return { inputs: [], outputs: one(c.name) };
+    case 'TRIANGLE':
+      return { inputs: [], outputs: toNameList(c.names) };
+    case 'TANGENTS':
+      return { inputs: [], outputs: toNameList(c.names) };
+    case 'DIAMETER':
+      return { inputs: one(c.through), outputs: one(c.otherEnd) };
+    case 'MIDPOINT':
+      return { inputs: toNameList(c.of), outputs: one(c.name || c.foot) };
+    case 'PERPENDICULAR':
+    case 'BISECTOR':
+      return { inputs: [...one(c.from), ...toNameList(c.to)], outputs: one(c.foot || c.name) };
+    case 'INTERSECT':
+      return { inputs: [...toNameList(c.obj1), ...toNameList(c.obj2)], outputs: one(c.name) };
+    case 'SEGMENT':
+      return { inputs: [...toNameList(c.from), ...toNameList(c.to)], outputs: [] };
+    case 'POLYGON':
+      return { inputs: toNameList(c.names), outputs: [] };
+    default:
+      return { inputs: [], outputs: [] };
+  }
+}
+
+/** Sắp xếp lại (tại chỗ) các lệnh để mỗi lệnh chạy sau những lệnh tạo ra điểm nó cần. Giữ thứ tự gốc khi có thể. */
+function orderCommandsByDependency(commands: ConstructionCommand[], available: Set<string>): void {
+  const remaining = commands.map((c) => ({ c, io: commandIO(c) }));
+  const ordered: ConstructionCommand[] = [];
+  const known = new Set(available);
+  let progress = true;
+  while (remaining.length > 0 && progress) {
+    progress = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const { c, io } = remaining[i];
+      if (io.inputs.every((n) => known.has(n))) {
+        ordered.push(c);
+        io.outputs.forEach((n) => known.add(n));
+        remaining.splice(i, 1);
+        progress = true;
+        break; // quay lại đầu danh sách để giữ thứ tự gốc tối đa
+      }
+    }
+  }
+  // Lệnh thiếu điểm đầu vào (không giải được) giữ ở cuối theo thứ tự cũ
+  ordered.push(...remaining.map((r) => r.c));
+  commands.splice(0, commands.length, ...ordered);
+}
+
 export function executeConstructionCommands(
   rawInput: any,
   canvasWidth: number,
@@ -538,6 +590,10 @@ export function executeConstructionCommands(
   if (autoPlaced.length > 0) {
     executedLog.push(`Tự đặt vị trí điểm gốc ${autoPlaced.join(', ')} (AI không cho tọa độ)`);
   }
+
+  // 2c. SẮP XẾP LỆNH THEO THỨ TỰ PHỤ THUỘC: lệnh cần điểm nào thì chạy sau lệnh tạo ra điểm đó
+  // (vd: INTERSECT(A, D, B, E, H) phải chạy sau các lệnh tạo D và E, dù AI/bộ đọc đề ghi theo thứ tự khác)
+  orderCommandsByDependency(commands, new Set(points.keys()));
 
   // Helper to get or fallback to point
   const getPt = (name: string): MathPoint | undefined => points.get(name);

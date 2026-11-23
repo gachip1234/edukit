@@ -163,7 +163,7 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
    - "PERPENDICULAR(A, B, C, H)"   → H là chân đường vuông góc hạ từ A xuống BC (tự vẽ AH và ký hiệu góc vuông)
    - "MIDPOINT(B, C, M)"           → M là trung điểm của BC
    - "INTERSECT(A, D, B, E, H)"    → H là giao điểm của đường thẳng AD và BE (tự vẽ phần kéo dài nét đứt nếu cần)
-   - "BISECTOR(A, B, C, D)"        → AD là phân giác góc BAC, D nằm trên BC (tự vẽ AD)
+   - "BISECTOR(B, A, C, D)"        → AD là phân giác của góc BAC (ĐỈNH A Ở GIỮA, giống cách viết góc BAC), D nằm trên BC (tự vẽ AD)
    - "TANGENTS(M, c1, A, B)"       → từ M kẻ 2 tiếp tuyến MA, MB tới đường tròn c1 (tự tính tiếp điểm A, B)
    - "DIAMETER(c1, A, C)"          → AC là đường kính của c1 (tự tính C đối xứng A qua tâm)
    - "SEGMENT(A, M)" / "SEGMENT_DASHED(A, M)" → đoạn thẳng AM (nét liền / nét đứt)
@@ -315,7 +315,7 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
           commands: {
             type: 'ARRAY',
             description:
-              'Lệnh dựng hình dạng chuỗi, đủ tham số theo đúng thứ tự, vd "PERPENDICULAR(A, B, C, H)", "MIDPOINT(B, C, M)", "INTERSECT(A, D, B, E, H)", "BISECTOR(A, B, C, D)", "TANGENTS(M, c1, A, B)", "DIAMETER(c1, A, C)", "SEGMENT(A, M)", "SEGMENT_DASHED(A, M)"',
+              'Lệnh dựng hình dạng chuỗi, đủ tham số theo đúng thứ tự, vd "PERPENDICULAR(A, B, C, H)", "MIDPOINT(B, C, M)", "INTERSECT(A, D, B, E, H)", "BISECTOR(B, A, C, D)" (phân giác góc BAC, đỉnh ở giữa), "TANGENTS(M, c1, A, B)", "DIAMETER(c1, A, C)", "SEGMENT(A, M)", "SEGMENT_DASHED(A, M)"',
             items: { type: 'STRING' },
           },
         },
