@@ -5,6 +5,7 @@ import type {
   CircleElement,
   AngleElement,
   PolygonElement,
+  LineElement,
 } from '../types/geometry';
 import { computeSmartPointLabelOffset } from './mathUtils';
 
@@ -122,6 +123,16 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
           through: diaMatch[2],
           otherEnd: diaMatch[3],
         });
+        continue;
+      }
+
+      // 2a. RAY(O, A, x) / LINE(A, B, d) / LINE(A, B, x, y) / RAY_ANGLE(O, 60, x) / LINE_ANGLE(A, 30, d)
+      const lineFamily = trimmed.match(/^(RAY_ANGLE|LINE_ANGLE|RAY|LINE|Tia|DuongThang)\s*\(([^)]*)\)/i);
+      if (lineFamily) {
+        const kind = lineFamily[1].toUpperCase();
+        const cmdName = kind === 'TIA' ? 'RAY' : kind === 'DUONGTHANG' ? 'LINE' : kind;
+        const args = lineFamily[2].split(',').map((a) => a.trim()).filter(Boolean);
+        result.push({ cmd: cmdName, args });
         continue;
       }
 
@@ -345,6 +356,14 @@ function autoPlaceMissingBasePoints(
       case 'DIAMETER':
         add(toNameList(c.through));
         break;
+      case 'RAY':
+      case 'LINE':
+        add((Array.isArray(c.args) ? c.args.slice(0, 2) : [c.from, c.through]).filter(Boolean).map(String));
+        break;
+      case 'RAY_ANGLE':
+      case 'LINE_ANGLE':
+        add((Array.isArray(c.args) ? c.args.slice(0, 1) : [c.from]).filter(Boolean).map(String));
+        break;
     }
   }
 
@@ -399,6 +418,12 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
       return { inputs: [], outputs: toNameList(c.names) };
     case 'DIAMETER':
       return { inputs: one(c.through), outputs: one(c.otherEnd) };
+    case 'RAY':
+    case 'LINE':
+      return { inputs: Array.isArray(c.args) ? c.args.slice(0, 2) : [...one(c.from), ...one(c.through)], outputs: [] };
+    case 'RAY_ANGLE':
+    case 'LINE_ANGLE':
+      return { inputs: Array.isArray(c.args) ? c.args.slice(0, 1) : one(c.from), outputs: [] };
     case 'MIDPOINT':
       return { inputs: toNameList(c.of), outputs: one(c.name || c.foot) };
     case 'PERPENDICULAR':
@@ -449,6 +474,15 @@ export function executeConstructionCommands(
   const segments: MathSegment[] = [];
   const angleMarkers: MathAngleMarker[] = [];
   const polygons: MathPolygon[] = [];
+  // Đường thẳng / tia: đi qua điểm "from" và điểm "through" (điểm có tên, hoặc điểm phụ ẩn dùng chỉ hướng)
+  const lineObjs: { from: string; through: string; isRay: boolean; startLabel?: string; endLabel?: string; dashed?: boolean }[] = [];
+  const helperPts = new Map<string, MathPoint>(); // điểm phụ ẩn (không vẽ), chỉ dùng xác định hướng
+  let helperCount = 0;
+  const addHelper = (x: number, y: number) => {
+    const name = `__dir${++helperCount}`;
+    helperPts.set(name, { name, x, y });
+    return name;
+  };
   const executedLog: string[] = [];
 
   // 1. TẢI CÁC ĐỐI TƯỢNG HÌNH HỌC TỪ CẤU TRÚC JSON ĐẦU RA CỦA AI (points, circles, segments, polygons, shapes)
@@ -461,7 +495,7 @@ export function executeConstructionCommands(
         if (name) {
           const x = Number(pt.x) || 0;
           const y = Number(pt.y) || 0;
-          points.set(name, { name, x, y, label: pt.label || name });
+          points.set(name, { name, x, y, label: pt.label ?? name });
           executedLog.push(`Điểm ${name}(${x}, ${y})`);
         }
       }
@@ -534,6 +568,27 @@ export function executeConstructionCommands(
             isRight: Boolean(ang.isRight !== false),
           });
           executedLog.push(`Ký hiệu góc tại ${vertex}`);
+        }
+      }
+    }
+
+    // e2. Đường thẳng / tia có sẵn (từ hình đang vẽ trên bảng): {from?, through?, x1, y1, x2, y2, isRay, startLabel, endLabel}
+    if (Array.isArray(rawInput.lines)) {
+      for (const ln of rawInput.lines) {
+        if (!ln) continue;
+        let from = String(ln.from || '').trim();
+        let through = String(ln.through || '').trim();
+        if (!from && Number.isFinite(Number(ln.x1))) from = addHelper(Number(ln.x1), Number(ln.y1));
+        if (!through && Number.isFinite(Number(ln.x2))) through = addHelper(Number(ln.x2), Number(ln.y2));
+        if (from && through && from !== through) {
+          lineObjs.push({
+            from,
+            through,
+            isRay: Boolean(ln.isRay),
+            startLabel: ln.startLabel || undefined,
+            endLabel: ln.endLabel || ln.label || undefined,
+            dashed: Boolean(ln.dashed),
+          });
         }
       }
     }
@@ -893,6 +948,52 @@ export function executeConstructionCommands(
         break;
       }
 
+      case 'RAY':
+      case 'LINE': {
+        // RAY(O, A, x): tia gốc O qua A, nhãn x | LINE(A, B, d) hoặc LINE(A, B, x, y)
+        const a: string[] = Array.isArray(cmd.args)
+          ? cmd.args
+          : [cmd.from, cmd.through ?? toNameList(cmd.to)[0], ...(toNameList(cmd.labels).length ? toNameList(cmd.labels) : [cmd.label].filter(Boolean))];
+        const [from, through, l1, l2] = a.map((v) => (v == null ? '' : String(v).trim()));
+        if (getPt(from) && getPt(through) && from !== through) {
+          const isRay = cmd.cmd === 'RAY';
+          lineObjs.push({
+            from,
+            through,
+            isRay,
+            startLabel: !isRay && l2 ? l1 : undefined,
+            endLabel: !isRay && l2 ? l2 : l1 || undefined,
+            dashed: Boolean(cmd.dashed),
+          });
+          executedLog.push(`${isRay ? 'Tia' : 'Đường thẳng'} ${isRay ? from + (l1 || through) : l1 && l2 ? l1 + l2 : l1 || from + through}`);
+        }
+        break;
+      }
+
+      case 'RAY_ANGLE':
+      case 'LINE_ANGLE': {
+        // RAY_ANGLE(O, 60, y): tia gốc O hợp với chiều dương Ox góc 60° (ngược chiều kim đồng hồ), nhãn y
+        const a: string[] = Array.isArray(cmd.args) ? cmd.args : [cmd.from, cmd.angle, cmd.label];
+        const [from, degStr, l1, l2] = a.map((v) => (v == null ? '' : String(v).trim()));
+        const origin = getPt(from);
+        const deg = parseFloat(degStr);
+        if (origin && Number.isFinite(deg)) {
+          const rad = (deg * Math.PI) / 180;
+          const through = addHelper(origin.x + 3 * Math.cos(rad), origin.y + 3 * Math.sin(rad));
+          const isRay = cmd.cmd === 'RAY_ANGLE';
+          lineObjs.push({
+            from,
+            through,
+            isRay,
+            startLabel: !isRay && l2 ? l1 : undefined,
+            endLabel: !isRay && l2 ? l2 : l1 || undefined,
+            dashed: Boolean(cmd.dashed),
+          });
+          executedLog.push(`${isRay ? 'Tia' : 'Đường thẳng'} ${from}${l1 || ''} (góc ${deg}°)`);
+        }
+        break;
+      }
+
       case 'BISECTOR': {
         // {"cmd": "BISECTOR", "from": "A", "to": ["B", "C"], "foot": "D"}: phân giác góc BAC cắt BC tại D
         const from = String(cmd.from || '').trim();
@@ -992,6 +1093,14 @@ export function executeConstructionCommands(
     }
   }
 
+  // 1b. Điểm phụ chỉ hướng của tia / đường thẳng (để hướng tia nằm trong khung nhìn)
+  for (const pt of helperPts.values()) {
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+
   // 2. Duyệt bao viền các đường tròn
   for (const circ of circles.values()) {
     const center = getPt(circ.center);
@@ -1055,7 +1164,7 @@ export function executeConstructionCommands(
       x: sPos.x,
       y: sPos.y,
       radius: 4.5,
-      label: pt.label || pt.name,
+      label: pt.label ?? pt.name,
       stroke: '#0f172a',
       strokeWidth: 2,
       strokeStyle: 'solid',
@@ -1121,6 +1230,28 @@ export function executeConstructionCommands(
       };
       finalElements.push(segEl);
     }
+  }
+
+  // 3b. Tạo các đường thẳng / tia (có nhãn)
+  for (const ln of lineObjs) {
+    const pFrom = pointElementMap.get(ln.from) ?? (helperPts.has(ln.from) ? toScreen(helperPts.get(ln.from)!.x, helperPts.get(ln.from)!.y) : undefined);
+    const pThrough = pointElementMap.get(ln.through) ?? (helperPts.has(ln.through) ? toScreen(helperPts.get(ln.through)!.x, helperPts.get(ln.through)!.y) : undefined);
+    if (!pFrom || !pThrough) continue;
+    const lineEl: LineElement = {
+      id: `line-${now}-${Math.random().toString(36).substr(2, 5)}`,
+      type: 'line',
+      x1: pFrom.x,
+      y1: pFrom.y,
+      x2: pThrough.x,
+      y2: pThrough.y,
+      ...(ln.isRay ? { isRay: true } : {}),
+      ...(ln.startLabel ? { startLabel: ln.startLabel } : {}),
+      ...(ln.endLabel ? { endLabel: ln.endLabel } : {}),
+      stroke: ln.dashed ? '#64748b' : '#2563eb',
+      strokeWidth: ln.dashed ? 1.5 : 2,
+      strokeStyle: ln.dashed ? 'dashed' : 'solid',
+    };
+    finalElements.push(lineEl);
   }
 
   // 4. Tạo các ký hiệu góc vuông / góc

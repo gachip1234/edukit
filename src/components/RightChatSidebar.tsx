@@ -53,6 +53,8 @@ interface RightChatSidebarProps {
     agentLevel?: AgentInteractionLevel,
     signal?: AbortSignal,
   ) => Promise<ChatPromptResult>;
+  /** Gọi khi xóa lịch sử chat (để lần chat sau không còn ngữ cảnh các yêu cầu cũ) */
+  onClearChat?: () => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -69,6 +71,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
   isOpen,
   onToggleOpen,
   onExecutePrompt,
+  onClearChat,
 }) => {
   const [mode, setMode] = useState<"offline" | "gemini">("gemini");
   const [apiKey, setApiKey] = useState<string>(() => {
@@ -235,6 +238,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
   };
 
   const handleClearChat = () => {
+    onClearChat?.();
     setMessages([
       {
         id: "welcome",

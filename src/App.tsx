@@ -27,6 +27,8 @@ import { parseAndExecuteCommand } from "./utils/commandParser";
 import { parseVietnameseGeometry, isSimpleSingleObjectCommand } from "./utils/nlpGeometryParser";
 import { solveClassicGeometry } from "./utils/geometrySolver";
 import { callGeminiGeometryAi, getCachedModel } from "./utils/geminiAiService";
+import { canvasToFigureSpec } from "./utils/figureContext";
+import { getCanvasOrigin } from "./utils/coordinateSystem";
 import {
   insertPointIntoPolygon,
   isPointNearPolygonEdge,
@@ -121,6 +123,8 @@ export const App: React.FC = () => {
   elementsRef.current = elements;
   const isArrowRepeatingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Các yêu cầu chat Gemini đã vẽ ra hình hiện tại (để AI vẽ tiếp đúng ngữ cảnh). Xóa khi bắt đầu hình mới.
+  const chatHistoryRef = useRef<string[]>([]);
 
 
   // Save project (.edukit) to computer
@@ -141,6 +145,7 @@ export const App: React.FC = () => {
     try {
       const data = await readProjectFromFile(file);
       updateElementsWithHistory(data.elements);
+      chatHistoryRef.current = [];
       if (data.globalLabelStyle) {
         setGlobalLabelStyle(data.globalLabelStyle);
       }
@@ -201,6 +206,7 @@ export const App: React.FC = () => {
     if (window.confirm("Bạn có chắc chắn muốn xóa toàn bộ bản vẽ không?")) {
       updateElementsWithHistory([]);
       setSelectedIds([]);
+      chatHistoryRef.current = [];
       showToast("Đã xóa trắng bản vẽ", "info");
     }
   }, [elements, updateElementsWithHistory]);
@@ -438,6 +444,9 @@ export const App: React.FC = () => {
           case "l":
             setCurrentTool("line");
             break;
+          case "r":
+            setCurrentTool("ray");
+            break;
           case "c":
             setCurrentTool("circle");
             break;
@@ -656,6 +665,13 @@ export const App: React.FC = () => {
       // Model AI ưu tiên (service sẽ tự chuyển sang model dự phòng nếu bị 404)
       const targetModel = model || getCachedModel();
 
+      // Hình đang có trên bảng → gửi kèm để AI VẼ TIẾP thay vì vẽ lại từ đầu
+      const canvasFigure = elements.length > 0 ? canvasToFigureSpec(elements, getCanvasOrigin(width, height)) : null;
+      const context =
+        canvasFigure && canvasFigure.spec.points.length > 0
+          ? { figure: canvasFigure.spec, history: chatHistoryRef.current }
+          : undefined;
+
       // Gọi Gemini API
       const aiRes = await callGeminiGeometryAi(
         prompt,
@@ -663,7 +679,8 @@ export const App: React.FC = () => {
         targetModel,
         width,
         height,
-        signal
+        signal,
+        context
       );
 
       // Nếu đã abort trong lúc chờ phản hồi, DỪNG NGAY LẬP TỨC và KHÔNG VẼ lên canvas
@@ -678,7 +695,13 @@ export const App: React.FC = () => {
       // ƯU TIÊN 1: Bộ dựng hình JavaScript đã tính toán giải tích và Auto-fit & Center chuẩn xác 100%
       if (aiRes.constructedElements && aiRes.constructedElements.length > 0) {
         if (!signal?.aborted) {
-          updateElementsWithHistory(aiRes.constructedElements);
+          // Vẽ tiếp: hình mới đã gồm cả hình cũ; giữ thêm các đối tượng không chuyển đổi được (chữ, LaTeX...)
+          updateElementsWithHistory(
+            aiRes.continued && canvasFigure
+              ? [...aiRes.constructedElements, ...canvasFigure.untouched]
+              : aiRes.constructedElements,
+          );
+          chatHistoryRef.current = aiRes.continued ? [...chatHistoryRef.current, prompt] : [prompt];
           showToast(aiRes.explanation, "success");
         }
         const reasoningSummary = aiRes.reasoning
@@ -686,7 +709,7 @@ export const App: React.FC = () => {
           : "";
         return {
           success: true,
-          message: `${aiRes.explanation}${reasoningSummary}\n\n(${aiRes.model || targetModel} đã xuất ${aiRes.constructedElements.length} đối tượng hình học)`,
+          message: `${aiRes.continued ? "➕ Vẽ tiếp trên hình đang có.\n" : ""}${aiRes.explanation}${reasoningSummary}\n\n(${aiRes.model || targetModel} đã xuất ${aiRes.constructedElements.length} đối tượng hình học)`,
           commands: aiRes.commands,
           rawJson: aiRes.rawParsedJson,
           rawText: aiRes.rawText,
@@ -921,6 +944,9 @@ export const App: React.FC = () => {
         isOpen={isChatOpen}
         onToggleOpen={() => setIsChatOpen(!isChatOpen)}
         onExecutePrompt={handleExecuteChatPrompt}
+        onClearChat={() => {
+          chatHistoryRef.current = [];
+        }}
       />
 
       {/* Hidden file input for opening saved project sessions */}
