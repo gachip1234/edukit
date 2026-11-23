@@ -22,12 +22,13 @@ import {
   exportProjectToFile,
   readProjectFromFile,
   autoSaveProjectSession,
+  getAutoSavedProjectSession,
 } from "./utils/projectFileManager";
 import { copyStageToClipboard, downloadDataUrl } from "./utils/clipboardExport";
 import { parseAndExecuteCommand } from "./utils/commandParser";
 import { parseVietnameseGeometry, isSimpleSingleObjectCommand } from "./utils/nlpGeometryParser";
 import { solveClassicGeometry } from "./utils/geometrySolver";
-import { callGeminiGeometryAi } from "./utils/geminiAiService";
+import { callGeminiGeometryAi, getCachedModel } from "./utils/geminiAiService";
 import {
   insertPointIntoPolygon,
   isPointNearPolygonEdge,
@@ -37,8 +38,14 @@ import { CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 export const App: React.FC = () => {
   // Elements & History state
-  const [elements, setElements] = useState<GeoElement[]>([]);
-  const [history, setHistory] = useState<GeoElement[][]>([[]]);
+  // Khôi phục phiên làm việc đã tự động lưu (nếu có) ngay khi mở app
+  const [restoredSession] = useState(() => getAutoSavedProjectSession());
+  const [elements, setElements] = useState<GeoElement[]>(
+    () => restoredSession?.elements ?? [],
+  );
+  const [history, setHistory] = useState<GeoElement[][]>(() => [
+    restoredSession?.elements ?? [],
+  ]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Active Tool & Selection
@@ -69,12 +76,15 @@ export const App: React.FC = () => {
   const [labelSettingsOpen, setLabelSettingsOpen] = useState(false);
 
   // Global Point Label Style
-  const [globalLabelStyle, setGlobalLabelStyle] = useState<GlobalLabelStyle>({
-    fontSize: 15,
-    color: "#0f172a",
-    fontFamily: "serif",
-    fontStyle: "italic bold",
-  });
+  const [globalLabelStyle, setGlobalLabelStyle] = useState<GlobalLabelStyle>(
+    () =>
+      restoredSession?.globalLabelStyle ?? {
+        fontSize: 15,
+        color: "#0f172a",
+        fontFamily: "serif",
+        fontStyle: "italic bold",
+      },
+  );
 
   const handleSaveGlobalLabelStyle = (
     newStyle: GlobalLabelStyle,
@@ -120,10 +130,9 @@ export const App: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-save session to localStorage whenever elements or globalLabelStyle change
+  // (lưu cả khi canvas trống, để hình đã xóa không bị khôi phục lại sau khi tải lại trang)
   useEffect(() => {
-    if (elements.length > 0) {
-      autoSaveProjectSession(elements, globalLabelStyle);
-    }
+    autoSaveProjectSession(elements, globalLabelStyle);
   }, [elements, globalLabelStyle]);
 
   // Save project (.edukit) to computer
@@ -616,8 +625,6 @@ export const App: React.FC = () => {
         localStorage.getItem("edukit_gemini_api_key")?.trim() ||
         (import.meta as any).env?.VITE_GEMINI_API_KEY?.trim() ||
         "";
-      const userGmail = localStorage.getItem("edukit_user_gmail")?.trim() || "";
-
       if (!activeApiKey) {
         // Fallback kiểm tra nếu bài toán giải được bằng bộ giải offline thì vẽ luôn
         const classicRes = solveClassicGeometry(prompt, elements, width, height);
@@ -637,23 +644,16 @@ export const App: React.FC = () => {
           };
         }
 
-        if (userGmail) {
-          return {
-            success: false,
-            message: `Xin chào tài khoản Giáo dục (${userGmail})!\nBài toán này nằm ngoài các mẫu hình học cơ bản. Để kích hoạt Agent AI phân tích tọa độ giải tích không giới hạn, bạn chỉ cần dán Gemini API Key miễn phí từ Google AI Studio vào ô API Key ở bảng điều khiển bên phải.`,
-            elementCount: 0,
-          };
-        }
         return {
           success: false,
           message:
-            "Đây là bài toán hình học tổng hợp nâng cao. Vui lòng đăng nhập Gmail (miễn phí) hoặc dán Gemini API Key ở khung bên phải để AI tự động tính tọa độ và vẽ toàn bộ bài toán!",
+            "Đây là bài toán hình học tổng hợp nâng cao. Vui lòng dán Gemini API Key (miễn phí tại Google AI Studio) ở khung bên phải để AI tự động tính tọa độ và vẽ toàn bộ bài toán!",
           elementCount: 0,
         };
       }
 
-      // Lựa chọn model AI (gemini-3.8-flash)
-      const targetModel = model || "gemini-3.8-flash";
+      // Model AI ưu tiên (service sẽ tự chuyển sang model dự phòng nếu bị 404)
+      const targetModel = model || getCachedModel();
 
       // Gọi Gemini API
       const aiRes = await callGeminiGeometryAi(
@@ -686,7 +686,7 @@ export const App: React.FC = () => {
           : "";
         return {
           success: true,
-          message: `${aiRes.explanation}${reasoningSummary}\n\n(${targetModel} đã xuất ${aiRes.constructedElements.length} đối tượng hình học)`,
+          message: `${aiRes.explanation}${reasoningSummary}\n\n(${aiRes.model || targetModel} đã xuất ${aiRes.constructedElements.length} đối tượng hình học)`,
           commands: aiRes.commands,
           rawJson: aiRes.rawParsedJson,
           rawText: aiRes.rawText,
@@ -722,7 +722,7 @@ export const App: React.FC = () => {
         const reasoningSummary = aiRes.reasoning ? `\n\n📐 Phân tích tọa độ (reasoning):\n${aiRes.reasoning}` : '';
         return {
           success: true,
-          message: `${aiRes.explanation}${reasoningSummary}\n\n(${targetModel} đã thực thi ${executed.length} lệnh tọa độ chuẩn xác)`,
+          message: `${aiRes.explanation}${reasoningSummary}\n\n(${aiRes.model || targetModel} đã thực thi ${executed.length} lệnh tọa độ chuẩn xác)`,
           commands: executed,
           rawJson: aiRes.rawParsedJson,
           rawText: aiRes.rawText,
