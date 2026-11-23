@@ -1243,7 +1243,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-slate-50/50 overflow-hidden cursor-crosshair select-none"
+      className="canvas-paper relative w-full h-full overflow-hidden cursor-crosshair select-none"
       style={{
         // Chặn trình duyệt điện thoại cuộn/phóng to trang khi đang vẽ bằng ngón tay
         touchAction: 'none',
@@ -1721,7 +1721,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
               case 'segment': {
                 // Ký hiệu đoạn bằng nhau (gạch nhỏ ở giữa đoạn)
-                const tickLines = el.ticks ? computeTickMarks(el.x1, el.y1, el.x2, el.y2, el.ticks) : [];
+                // Nếu giữa đoạn đã có một điểm (vd: trung điểm M trên AB) thì không vẽ gạch đè lên điểm đó
+                const midX = (el.x1 + el.x2) / 2;
+                const midY = (el.y1 + el.y2) / 2;
+                const pointAtMiddle = elements.some(
+                  (p) => p.type === 'point' && Math.hypot(p.x - midX, p.y - midY) < 10,
+                );
+                const tickLines =
+                  el.ticks && !pointAtMiddle ? computeTickMarks(el.x1, el.y1, el.x2, el.y2, el.ticks) : [];
                 return (
                   <React.Fragment key={el.id}>
                   {tickLines.map((pts, i) => (

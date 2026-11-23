@@ -7,7 +7,6 @@ import type {
   PolygonElement,
   LineElement,
 } from '../types/geometry';
-import { computeSmartPointLabelOffset } from './mathUtils';
 
 export interface ConstructionCommand {
   cmd: string;
@@ -1273,11 +1272,9 @@ export function executeConstructionCommands(
     pointElementMap.set(pt.name, ptEl);
   }
 
-  // Tinh chỉnh nhãn thông minh không bị đè lên hình
-  const allPtsList = Array.from(pointElementMap.values());
-  for (const ptEl of allPtsList) {
-    const smartOffset = computeSmartPointLabelOffset(ptEl, allPtsList);
-    ptEl.labelOffset = smartOffset;
+  // Nhãn điểm: KHÔNG cố định vị trí ở đây — bảng vẽ tự tính theo toàn bộ hình (đoạn, đường tròn...)
+  // để nhãn cách điểm bằng độ rộng chữ và không đè lên các đối tượng khác, kể cả khi kéo điểm.
+  for (const ptEl of pointElementMap.values()) {
     finalElements.push(ptEl);
   }
 
