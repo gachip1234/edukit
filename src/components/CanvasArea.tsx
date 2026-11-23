@@ -1247,6 +1247,9 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           showAxes={showAxes}
           width={dimensions.width / zoom}
           height={dimensions.height / zoom}
+          hideOriginLabel={elements.some(
+            (el) => el.type === 'point' && (el as PointElement).label?.trim().toUpperCase() === 'O',
+          )}
         />
 
         {/* Layer 2: Main Geometry Shapes */}

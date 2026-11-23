@@ -7,6 +7,8 @@ interface GridLayerProps {
   showAxes: boolean;
   width: number;
   height: number;
+  /** Ẩn chữ "O" ở gốc trục khi trên hình đã có điểm tên O (tránh hai chữ O đè nhau) */
+  hideOriginLabel?: boolean;
 }
 
 export const GridLayer: React.FC<GridLayerProps> = ({
@@ -14,6 +16,7 @@ export const GridLayer: React.FC<GridLayerProps> = ({
   showAxes,
   width,
   height,
+  hideOriginLabel = false,
 }) => {
   if (!showGrid && !showAxes) return null;
 
@@ -125,8 +128,8 @@ export const GridLayer: React.FC<GridLayerProps> = ({
       />
     );
 
-    // Origin O label
-    lines.push(
+    // Origin O label (ẩn nếu hình đã có điểm O riêng)
+    if (!hideOriginLabel) lines.push(
       <Text
         key="label-o"
         x={originX - 16}
