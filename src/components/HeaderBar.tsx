@@ -9,6 +9,9 @@ import {
   ZoomIn,
   ZoomOut,
   Sparkles,
+  Sun,
+  Moon,
+  MonitorSmartphone,
   Type,
   Save,
   FolderOpen,
@@ -35,6 +38,9 @@ interface HeaderBarProps {
   isExporting?: boolean;
   isChatOpen?: boolean;
   onToggleChat?: () => void;
+  /** Chế độ giao diện hiện tại và hàm chuyển Sáng → Tối → Tự động */
+  themePreference?: 'light' | 'dark' | 'system';
+  onCycleTheme?: () => void;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -58,9 +64,11 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   isExporting = false,
   isChatOpen = false,
   onToggleChat,
+  themePreference = 'system',
+  onCycleTheme,
 }) => {
   return (
-    <header className="h-16 short:h-12 bg-white border-b border-slate-200 px-2 md:px-4 flex items-center justify-between gap-2 min-[1700px]:gap-1 z-20 shadow-xs select-none">
+    <header className="h-16 short:h-12 bg-white/75 backdrop-blur-xl backdrop-saturate-150 border-b border-slate-200/80 px-2 md:px-4 flex items-center justify-between gap-2 min-[1700px]:gap-1 z-20 shadow-xs select-none">
       {/* Brand & Title */}
       <div className="flex items-center gap-2 md:gap-3 shrink-0">
         <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
@@ -235,6 +243,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         >
           <Download className="w-4 h-4" />
         </button>
+
+        {/* Chế độ giao diện: Sáng → Tối → Tự động (theo hệ thống) */}
+        {onCycleTheme && (
+          <button
+            onClick={onCycleTheme}
+            title={
+              themePreference === 'light'
+                ? 'Giao diện: Sáng (bấm để chuyển sang Tối)'
+                : themePreference === 'dark'
+                  ? 'Giao diện: Tối (bấm để chuyển sang Tự động theo hệ thống)'
+                  : 'Giao diện: Tự động theo hệ thống (bấm để chuyển sang Sáng)'
+            }
+            aria-label="Đổi chế độ giao diện sáng / tối"
+            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+          >
+            {themePreference === 'light' && <Sun className="w-4 h-4 text-amber-500" />}
+            {themePreference === 'dark' && <Moon className="w-4 h-4 text-indigo-400" />}
+            {themePreference === 'system' && <MonitorSmartphone className="w-4 h-4 text-slate-500" />}
+            <span className="hidden min-[1700px]:inline short:hidden">
+              {themePreference === 'light' ? 'Sáng' : themePreference === 'dark' ? 'Tối' : 'Tự động'}
+            </span>
+          </button>
+        )}
 
         {/* Toggle Chat AI Sidebar Button */}
         {onToggleChat && (

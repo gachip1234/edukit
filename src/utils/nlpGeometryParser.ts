@@ -11,6 +11,29 @@ import type {
 import { getCanvasOrigin, mathToScreen } from './coordinateSystem';
 import { distance } from './mathUtils';
 
+/** Đoạn thẳng mang ký hiệu "bằng nhau" (gạch nhỏ ở giữa), vẽ trùng lên cạnh có sẵn */
+function tickSegment(
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  ticks: number,
+  id: string,
+  groupId?: string,
+): SegmentElement {
+  return {
+    id,
+    type: 'segment',
+    ...(groupId ? { groupId } : {}),
+    x1: p1.x,
+    y1: p1.y,
+    x2: p2.x,
+    y2: p2.y,
+    ticks,
+    stroke: '#2563eb',
+    strokeWidth: 2,
+    strokeStyle: 'solid',
+  };
+}
+
 export interface NlpParseResult {
   success: boolean;
   message: string;
@@ -286,7 +309,8 @@ export function parseVietnameseGeometry(
         }
       }
       // Tia đối: từ gốc O, hướng ngược với A
-      const away = { x: o.x + (o.x - a.x), y: o.y + (o.y - a.y) };
+      const oaLen = Math.hypot(o.x - a.x, o.y - a.y) || 1;
+      const away = { x: o.x + ((o.x - a.x) / oaLen) * 100, y: o.y + ((o.y - a.y) / oaLen) * 100 };
       if (/^[A-Z]/.test(label)) {
         const d = findPt(label) ?? { ...mkPt(label, 0, 0), x: o.x + (o.x - a.x) * 0.6, y: o.y + (o.y - a.y) * 0.6 };
         if (!findPt(label)) created.push(d);
@@ -426,7 +450,18 @@ export function parseVietnameseGeometry(
       side = parseFloat(sideMatch[1]);
     }
 
-    return createRegularPolygon(3, side, 'Tam giác đều', [A, B, C], origin, now, existingElements);
+    const eqRes = createRegularPolygon(3, side, 'Tam giác đều', [A, B, C], origin, now, existingElements);
+    // Ký hiệu ba cạnh bằng nhau
+    const triPoly = eqRes.newElements?.find(
+      (el) => el.type === 'polygon' && !existingElements.includes(el),
+    ) as PolygonElement | undefined;
+    if (triPoly && triPoly.points.length >= 6 && eqRes.newElements) {
+      const v = [0, 1, 2].map((i) => ({ x: triPoly.points[2 * i], y: triPoly.points[2 * i + 1] }));
+      eqRes.newElements.push(
+        ...[0, 1, 2].map((i) => tickSegment(v[i], v[(i + 1) % 3], 1, `seg-tick-eq${i}-${now}`, triPoly.groupId)),
+      );
+    }
+    return eqRes;
   }
 
   // -------------------------------------------------------------
@@ -602,6 +637,9 @@ export function parseVietnameseGeometry(
       { id: `pt-${A}-${now}`, type: 'point', groupId: gidIso, x: sA.x, y: sA.y, radius: 4.5, label: A, stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' },
       { id: `pt-${B}-${now}`, type: 'point', groupId: gidIso, x: sB.x, y: sB.y, radius: 4.5, label: B, stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' },
       { id: `pt-${C}-${now}`, type: 'point', groupId: gidIso, x: sC.x, y: sC.y, radius: 4.5, label: C, stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' },
+      // Ký hiệu hai cạnh bên bằng nhau
+      tickSegment(sA, sB, 1, `seg-tickAB-${now}`, gidIso),
+      tickSegment(sA, sC, 1, `seg-tickAC-${now}`, gidIso),
     ];
 
     return {
@@ -877,7 +915,13 @@ export function parseVietnameseGeometry(
       return {
         success: true,
         message: `Đã xác định trung điểm ${mName} của đoạn thẳng ${p1Name}${p2Name}!`,
-        newElements: [...existingElements, midPoint],
+        newElements: [
+          ...existingElements,
+          // Ký hiệu hai nửa bằng nhau
+          tickSegment(p1, midPoint, 1, `seg-tick1-${now}`),
+          tickSegment(midPoint, p2, 1, `seg-tick2-${now}`),
+          midPoint,
+        ],
       };
     }
   }

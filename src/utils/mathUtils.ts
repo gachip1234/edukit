@@ -256,118 +256,175 @@ export const computeRightAnglePoints = (
   return [vx, vy, vx + size, vy, vx + size, vy + size];
 };
 
+/** Đoạn thẳng (x1,y1)-(x2,y2) có cắt hình chữ nhật [minX,minY,maxX,maxY] không (Liang–Barsky) */
+const segmentHitsBox = (
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  box: [number, number, number, number],
+): boolean => {
+  const [minX, minY, maxX, maxY] = box;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  const clip = (p: number, q: number) => {
+    if (Math.abs(p) < 1e-12) return q >= 0;
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return false;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return false;
+      if (r < t1) t1 = r;
+    }
+    return true;
+  };
+  return clip(-dx, x1 - minX) && clip(dx, maxX - x1) && clip(-dy, y1 - minY) && clip(dy, maxY - y1);
+};
+
 /**
- * Computes an optimal label offset for a point so the label is never covered by lines or polygons.
- * Mặc định khoảng cách tên nhãn luôn cách điểm bằng bề rộng của chữ tạo nhãn đó.
+ * Vị trí nhãn của điểm (góc trên-trái của khung chữ, tính từ tâm điểm).
+ *
+ * - Khoảng cách từ điểm tới mép gần nhất của chữ = độ rộng chữ (tối thiểu 8px, tối đa 1.2 × cỡ chữ).
+ * - Thử 16 hướng quanh điểm; chấm điểm mỗi hướng theo: độ xa so với các đường đi ra từ điểm,
+ *   và phạt nặng nếu khung chữ đè lên đoạn thẳng, cạnh đa giác, đường thẳng/tia, đường tròn,
+ *   hoặc điểm khác. Ưu tiên nhẹ các hướng quen thuộc (trên, trên-phải, trên-trái).
+ * - Nếu người dùng đã tự kéo nhãn (labelOffset), giữ nguyên vị trí đó.
  */
 export const computeSmartPointLabelOffset = (
   pt: PointElement,
   elements: GeoElement[],
   distancePx?: number
 ): { x: number; y: number } => {
-  // If user explicitly configured custom labelOffset, respect it
   if (pt.labelOffset && (pt.labelOffset.x !== 0 || pt.labelOffset.y !== 0)) {
     return pt.labelOffset;
   }
 
-  // Bề rộng của chữ tạo nhãn đó:
-  // Tính theo cỡ chữ (mặc định 15px) và độ dài nhãn (ví dụ 'A' ~ 12px, 'A_1' / "M'" ~ 20px)
   const fSize = pt.labelFontSize || 15;
-  const labelLength = pt.label ? pt.label.length : 1;
-  const charWidth = Math.max(12, Math.round(labelLength * fSize * 0.75));
-  // Khoảng cách hiệu dụng từ tâm điểm đến nhãn = bề rộng chữ + bán kính điểm
-  const effectiveDist = distancePx !== undefined ? distancePx : charWidth + (pt.radius || 4.5);
+  const label = pt.label || 'A';
+  // Ước lượng kích thước chữ (chữ nghiêng có chân, ~0.62 cỡ chữ mỗi ký tự)
+  const w = Math.max(fSize * 0.62, label.length * fSize * 0.62);
+  const h = fSize * 1.05;
+  const r = pt.radius || 4.5;
+  const gap = distancePx !== undefined ? distancePx : Math.min(Math.max(8, w), fSize * 1.2);
 
-  // Collect all ray angles radiating away from this point
+  // Hướng các đường đi ra từ điểm, và các vật cản (đoạn thẳng, đường tròn, điểm khác)
   const rayAngles: number[] = [];
+  const obstacles: [number, number, number, number][] = [];
+  const circles: { cx: number; cy: number; r: number }[] = [];
+  const otherPoints: { x: number; y: number }[] = [];
+  const addRaysFromSegment = (x1: number, y1: number, x2: number, y2: number) => {
+    obstacles.push([x1, y1, x2, y2]);
+    if (Math.hypot(x1 - pt.x, y1 - pt.y) < 8) rayAngles.push(Math.atan2(y2 - pt.y, x2 - pt.x));
+    else if (Math.hypot(x2 - pt.x, y2 - pt.y) < 8) rayAngles.push(Math.atan2(y1 - pt.y, x1 - pt.x));
+    else {
+      // Điểm nằm giữa đoạn (vd: trung điểm) → cả hai hướng của đoạn
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const t = ((pt.x - x1) * dx + (pt.y - y1) * dy) / (len * len);
+      const dist = Math.abs((pt.x - x1) * dy - (pt.y - y1) * dx) / len;
+      if (t > 0 && t < 1 && dist < 6) {
+        const a = Math.atan2(dy, dx);
+        rayAngles.push(a, a + Math.PI);
+      }
+    }
+  };
 
   for (const el of elements) {
-    if (el.type === 'segment') {
-      const at1 = Math.hypot(el.x1 - pt.x, el.y1 - pt.y) < 8;
-      const at2 = Math.hypot(el.x2 - pt.x, el.y2 - pt.y) < 8;
-      if (at1) {
-        rayAngles.push(Math.atan2(el.y2 - pt.y, el.x2 - pt.x));
-      } else if (at2) {
-        rayAngles.push(Math.atan2(el.y1 - pt.y, el.x1 - pt.x));
-      }
-    } else if (el.type === 'polygon') {
-      const pts = el.points;
-      const numPts = pts.length / 2;
-      for (let i = 0; i < numPts; i++) {
-        const vx = pts[i * 2];
-        const vy = pts[i * 2 + 1];
-        if (Math.hypot(vx - pt.x, vy - pt.y) < 8) {
-          const prevIdx = (i - 1 + numPts) % numPts;
-          const nextIdx = (i + 1) % numPts;
-          rayAngles.push(Math.atan2(pts[prevIdx * 2 + 1] - pt.y, pts[prevIdx * 2] - pt.x));
-          rayAngles.push(Math.atan2(pts[nextIdx * 2 + 1] - pt.y, pts[nextIdx * 2] - pt.x));
+    if (el.id === pt.id) continue;
+    switch (el.type) {
+      case 'segment':
+        addRaysFromSegment(el.x1, el.y1, el.x2, el.y2);
+        break;
+      case 'polygon': {
+        const n = el.points.length / 2;
+        for (let i = 0; i < n; i++) {
+          const j = (i + 1) % n;
+          addRaysFromSegment(el.points[2 * i], el.points[2 * i + 1], el.points[2 * j], el.points[2 * j + 1]);
         }
+        break;
       }
-    } else if (el.type === 'line') {
-      const dx = el.x2 - el.x1;
-      const dy = el.y2 - el.y1;
-      const len = Math.hypot(dx, dy);
-      if (len > 1e-4) {
+      case 'line': {
+        const dx = el.x2 - el.x1;
+        const dy = el.y2 - el.y1;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-4) break;
+        const ux = dx / len;
+        const uy = dy / len;
+        const L = 3000;
+        const sx = el.isRay ? el.x1 : el.x1 - ux * L;
+        const sy = el.isRay ? el.y1 : el.y1 - uy * L;
+        obstacles.push([sx, sy, el.x1 + ux * L, el.y1 + uy * L]);
         const d = Math.abs((pt.x - el.x1) * dy - (pt.y - el.y1) * dx) / len;
         if (d < 8) {
           const a = Math.atan2(dy, dx);
-          rayAngles.push(a, a + Math.PI);
+          const atOrigin = el.isRay && Math.hypot(pt.x - el.x1, pt.y - el.y1) < 8;
+          rayAngles.push(a);
+          if (!atOrigin) rayAngles.push(a + Math.PI);
         }
+        break;
       }
+      case 'circle': {
+        circles.push({ cx: el.cx, cy: el.cy, r: el.radius });
+        const dc = Math.hypot(pt.x - el.cx, pt.y - el.cy);
+        if (Math.abs(dc - el.radius) < 8 && dc > 1) {
+          // Điểm trên đường tròn: tránh hai hướng tiếp tuyến và hướng vào trong tâm
+          const toCenter = Math.atan2(el.cy - pt.y, el.cx - pt.x);
+          rayAngles.push(toCenter + Math.PI / 2, toCenter - Math.PI / 2, toCenter);
+        }
+        break;
+      }
+      case 'point':
+        otherPoints.push({ x: el.x, y: el.y });
+        break;
     }
   }
 
-  // If no rays connected, default to top-right with distance = charWidth
-  if (rayAngles.length === 0) {
-    return {
-      x: Math.round(charWidth * 0.6 + (pt.radius || 4.5)),
-      y: -Math.round(charWidth * 0.8 + (pt.radius || 4.5)),
-    };
-  }
+  const prefs: Record<number, number> = { [-90]: 1.12, [-45]: 1.15, [-135]: 1.1, 0: 1, 180: 1, 45: 0.95, 135: 0.95, 90: 0.92 };
+  let best = { score: -Infinity, x: 0, y: 0 };
+  for (let k = 0; k < 16; k++) {
+    const deg = -90 + k * 22.5;
+    const ang = (deg * Math.PI) / 180;
+    const dirX = Math.cos(ang);
+    const dirY = Math.sin(ang);
+    // Tâm khung chữ: mép gần nhất của chữ cách mép điểm đúng "gap"
+    const reach = r + gap + Math.abs(dirX) * (w / 2) + Math.abs(dirY) * (h / 2);
+    const cx = pt.x + dirX * reach;
+    const cy = pt.y + dirY * reach;
+    const box: [number, number, number, number] = [cx - w / 2 - 2, cy - h / 2 - 2, cx + w / 2 + 2, cy + h / 2 + 2];
 
-  // 8 candidate directions with conventional math preferences (Top / Top-Right / Top-Left preferred)
-  const candidates = [
-    { angle: -Math.PI / 2, pref: 1.15 },       // Top (0, -1)
-    { angle: -Math.PI / 4, pref: 1.18 },       // Top-Right
-    { angle: (-3 * Math.PI) / 4, pref: 1.12 }, // Top-Left
-    { angle: 0, pref: 0.95 },                  // Right
-    { angle: Math.PI, pref: 0.95 },            // Left
-    { angle: Math.PI / 4, pref: 0.9 },         // Bottom-Right
-    { angle: (3 * Math.PI) / 4, pref: 0.9 },   // Bottom-Left
-    { angle: Math.PI / 2, pref: 0.85 },        // Bottom
-  ];
-
-  let bestAngle = -Math.PI / 4;
-  let bestScore = -Infinity;
-
-  for (const cand of candidates) {
-    let minDiff = Math.PI;
+    let clearance = Math.PI;
     for (const ray of rayAngles) {
-      let diff = Math.abs(cand.angle - ray);
-      while (diff > Math.PI) diff = Math.abs(diff - 2 * Math.PI);
-      if (diff < minDiff) minDiff = diff;
+      let diff = Math.abs(ang - ray) % (2 * Math.PI);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+      clearance = Math.min(clearance, diff);
     }
-
-    const score = minDiff * cand.pref;
-    if (score > bestScore) {
-      bestScore = score;
-      bestAngle = cand.angle;
+    let penalty = 0;
+    for (const [x1, y1, x2, y2] of obstacles) if (segmentHitsBox(x1, y1, x2, y2, box)) penalty += 1;
+    for (const c of circles) {
+      // Đường tròn cắt khung chữ nếu khoảng cách từ tâm tới khung nằm giữa (gần nhất, xa nhất) quanh bán kính
+      const nx = Math.max(box[0], Math.min(c.cx, box[2]));
+      const ny = Math.max(box[1], Math.min(c.cy, box[3]));
+      const near = Math.hypot(c.cx - nx, c.cy - ny);
+      const far = Math.max(
+        Math.hypot(c.cx - box[0], c.cy - box[1]),
+        Math.hypot(c.cx - box[2], c.cy - box[1]),
+        Math.hypot(c.cx - box[0], c.cy - box[3]),
+        Math.hypot(c.cx - box[2], c.cy - box[3]),
+      );
+      if (near <= c.r && far >= c.r) penalty += 1;
     }
+    for (const o of otherPoints) {
+      if (o.x > box[0] - 6 && o.x < box[2] + 6 && o.y > box[1] - 6 && o.y < box[3] + 6) penalty += 1.5;
+    }
+    const pref = prefs[Math.round(deg)] ?? 0.97;
+    const score = Math.min(clearance, Math.PI / 2) * pref - penalty * 2;
+    if (score > best.score) best = { score, x: cx - w / 2 - pt.x, y: cy - h / 2 - pt.y };
   }
-
-  const dirX = Math.cos(bestAngle);
-  const dirY = Math.sin(bestAngle);
-
-  // Optical alignment adjustments based on font baseline
-  let offsetX = dirX * effectiveDist;
-  let offsetY = dirY * effectiveDist;
-
-  if (dirX < -0.3) offsetX -= 6;
-  else if (dirX > 0.3) offsetX += 4;
-  if (dirY < -0.3) offsetY -= 4;
-  else if (dirY > 0.3) offsetY += 6;
-
-  return { x: Math.round(offsetX), y: Math.round(offsetY) };
+  return { x: Math.round(best.x), y: Math.round(best.y) };
 };
 
 // Compute infinite line across canvas bounds [0, 0, width, height] passing through (x1, y1) and (x2, y2)

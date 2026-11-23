@@ -37,7 +37,7 @@ import {
 } from '../utils/mathUtils';
 import type { EdgeTarget } from '../utils/mathUtils';
 import { GridLayer } from './GridLayer';
-import { computeVisibleLine } from '../utils/lineLabels';
+import { computeVisibleLine, computeTickMarks } from '../utils/lineLabels';
 import { LatexShape } from './LatexShape';
 
 interface CanvasAreaProps {
@@ -1243,7 +1243,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-slate-50/50 overflow-hidden cursor-crosshair select-none"
+      className="canvas-paper relative w-full h-full overflow-hidden cursor-crosshair select-none"
       style={{
         // Chặn trình duyệt điện thoại cuộn/phóng to trang khi đang vẽ bằng ngón tay
         touchAction: 'none',
@@ -1720,7 +1720,20 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             }
 
               case 'segment': {
+                // Ký hiệu đoạn bằng nhau (gạch nhỏ ở giữa đoạn)
+                // Nếu giữa đoạn đã có một điểm (vd: trung điểm M trên AB) thì không vẽ gạch đè lên điểm đó
+                const midX = (el.x1 + el.x2) / 2;
+                const midY = (el.y1 + el.y2) / 2;
+                const pointAtMiddle = elements.some(
+                  (p) => p.type === 'point' && Math.hypot(p.x - midX, p.y - midY) < 10,
+                );
+                const tickLines =
+                  el.ticks && !pointAtMiddle ? computeTickMarks(el.x1, el.y1, el.x2, el.y2, el.ticks) : [];
                 return (
+                  <React.Fragment key={el.id}>
+                  {tickLines.map((pts, i) => (
+                    <KonvaLine key={`${el.id}-tick${i}`} points={pts} stroke={el.stroke} strokeWidth={1.6} listening={false} />
+                  ))}
                   <KonvaLine
                     key={el.id}
                     id={el.id}
@@ -1842,6 +1855,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       onElementsChange(updated);
                     }}
                   />
+                  </React.Fragment>
                 );
               }
 

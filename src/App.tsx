@@ -29,6 +29,7 @@ import { solveClassicGeometry } from "./utils/geometrySolver";
 import { callGeminiGeometryAi, getCachedModel } from "./utils/geminiAiService";
 import { canvasToFigureSpec } from "./utils/figureContext";
 import { getCanvasOrigin } from "./utils/coordinateSystem";
+import { useTheme } from "./utils/useTheme";
 import {
   insertPointIntoPolygon,
   isPointNearPolygonEdge,
@@ -37,6 +38,9 @@ import {
 import { CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 export const App: React.FC = () => {
+  // Giao diện Sáng / Tối / Tự động
+  const { preference: themePreference, cycleTheme } = useTheme();
+
   // Elements & History state
   // Mỗi lần mở/tải lại trang, canvas luôn bắt đầu trống
   // (muốn giữ hình thì dùng "Lưu file" / "Mở file")
@@ -827,7 +831,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col w-screen h-screen h-dvh overflow-hidden bg-slate-100 font-sans">
+    <div className="flex flex-col w-screen h-screen h-dvh overflow-hidden font-sans">
       {/* Top Header Bar */}
       <HeaderBar
         showGrid={showGrid}
@@ -849,6 +853,8 @@ export const App: React.FC = () => {
         isExporting={isExporting}
         isChatOpen={isChatOpen}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
+        themePreference={themePreference}
+        onCycleTheme={cycleTheme}
         onOpenLabelSettings={() => setLabelSettingsOpen(true)}
       />
 
@@ -960,7 +966,7 @@ export const App: React.FC = () => {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-20 md:bottom-16 left-3 right-3 md:left-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-20 md:bottom-16 left-3 right-3 md:left-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border border-slate-200 bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
           {toast.type === "success" && (
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
           )}
