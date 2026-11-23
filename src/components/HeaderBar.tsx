@@ -84,7 +84,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             </span>
           </h1>
           <p className="hidden md:block short:hidden text-[11px] text-slate-400 font-medium">
-            Vẽ hình học & Xuất ảnh PNG trong suốt cho PowerPoint
+            Vẽ hình học & Xuất ảnh PNG cho Word, PowerPoint
           </p>
         </div>
           {/* Chế độ giao diện: Sáng → Tối → Tự động — đặt cạnh logo để luôn nhìn thấy (kể cả trên điện thoại) */}
@@ -234,7 +234,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <button
           onClick={onCopySelection}
           disabled={selectedCount === 0 || isExporting}
-          title="Sao chép các đối tượng đang chọn ra ảnh PNG trong suốt vào Clipboard"
+          title="Sao chép các đối tượng đang chọn ra ảnh PNG vào Clipboard (dán Ctrl+V vào Word)"
           className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 border ${
             selectedCount > 0 && !isExporting
               ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 active:scale-97 shadow-xs'
@@ -254,7 +254,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <button
           onClick={onCopyAll}
           disabled={isExporting}
-          title="Sao chép toàn bộ hình vẽ thành ảnh PNG nền trong suốt độ nét cao (300 DPI) để dán trực tiếp vào PowerPoint"
+          title="Sao chép toàn bộ hình vẽ thành ảnh PNG nền trắng để dán trực tiếp (Ctrl+V) vào Word, PowerPoint"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-97 transition-all shadow-md shadow-blue-500/25"
         >
           <Copy className="w-4 h-4" />
@@ -268,7 +268,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <button
           onClick={onDownloadPng}
           disabled={isExporting}
-          title="Tải ảnh PNG nền trong suốt về máy"
+          title="Tải ảnh PNG về máy"
           className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors"
         >
           <Download className="w-4 h-4" />
