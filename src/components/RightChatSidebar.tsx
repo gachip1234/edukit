@@ -13,16 +13,14 @@ import {
   Code2,
   Check,
   Loader2,
-  Mail,
   Sliders,
-  LogOut,
   Zap,
   Brain,
   X,
   Compass,
 } from "lucide-react";
 
-import { getCachedModel, setCachedModel } from "../utils/geminiAiService";
+import { getCachedModel, setCachedModel, VALID_TEXT_MODELS } from "../utils/geminiAiService";
 
 export type AgentInteractionLevel = "direct" | "analytical" | "deep_reasoning";
 
@@ -90,12 +88,6 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
   });
   const [isLevelModalOpen, setIsLevelModalOpen] = useState(false);
 
-  // Gmail account login state without API Key
-  const [userGmail, setUserGmail] = useState<string>(() => {
-    return localStorage.getItem("edukit_user_gmail") || "";
-  });
-  const [isGmailModalOpen, setIsGmailModalOpen] = useState(false);
-  const [gmailInput, setGmailInput] = useState("");
 
   const [inputPrompt, setInputPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -246,29 +238,6 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
     ]);
   };
 
-  const handleLoginGmail = (emailToUse: string) => {
-    const email = emailToUse.trim();
-    if (!email) return;
-    setUserGmail(email);
-    localStorage.setItem("edukit_user_gmail", email);
-    setIsGmailModalOpen(false);
-    setMode("gemini");
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `sys-${Date.now()}`,
-        sender: "assistant",
-        text: `Đã liên kết tài khoản Gmail: ${email}. Hệ thống đã tự động nạp Agent Hình Học Sư Phạm (EduKit Education Agent). Bạn có thể vẽ bài toán ngay mà không cần cấu hình API Key!`,
-        timestamp: Date.now(),
-      },
-    ]);
-  };
-
-  const handleLogoutGmail = () => {
-    setUserGmail("");
-    localStorage.removeItem("edukit_user_gmail");
-  };
-
   const getAgentLevelInfo = () => {
     switch (agentLevel) {
       case "direct":
@@ -376,9 +345,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                   <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
                     {mode === "offline"
                       ? "Bộ giải Hình học JS (Offline)"
-                      : userGmail && !apiKey
-                        ? "EduKit Cloud Agent (Gmail)"
-                        : selectedModel}
+                      : selectedModel}
                   </span>
                   <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-full font-medium">
                     {levelInfo.title.split(":")[0]}
@@ -395,35 +362,6 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
             </div>
           </button>
 
-          {/* Gmail Sign-In / Account status line */}
-          <div className="mt-1.5 flex items-center justify-between px-1 text-[11px]">
-            {userGmail ? (
-              <div className="flex items-center justify-between w-full bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-1 text-emerald-800">
-                <span className="flex items-center gap-1 font-medium truncate">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <Mail className="w-3 h-3 text-emerald-600 shrink-0" />
-                  <span className="truncate">{userGmail}</span>
-                </span>
-                <button
-                  onClick={handleLogoutGmail}
-                  title="Đăng xuất tài khoản Gmail"
-                  className="text-[10px] text-emerald-700 hover:text-rose-600 underline ml-2 shrink-0 flex items-center gap-0.5"
-                >
-                  <LogOut className="w-2.5 h-2.5" />
-                  <span>Đổi</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsGmailModalOpen(true)}
-                title="Đăng nhập tài khoản Gmail để sử dụng ngay mà không cần cấu hình API Key"
-                className="w-full flex items-center justify-center gap-1.5 py-1 px-2 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-[11px] font-semibold transition-colors"
-              >
-                <Mail className="w-3.5 h-3.5 text-blue-600" />
-                <span>Đăng nhập Gmail (Miễn phí • Tự nạp Agent)</span>
-              </button>
-            )}
-          </div>
         </div>
 
         {/* Mode Selector Tab (Thuần JS vs Gemini AI) */}
@@ -450,17 +388,17 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Gemini AI {userGmail ? "• Gmail" : ""}</span>
+              <span>Gemini AI</span>
             </button>
           </div>
 
           {/* Gemini API Key config toggle (Only if needed and user wants custom key) */}
-          {mode === "gemini" && !userGmail && (
+          {mode === "gemini" && (
             <div className="mt-2 p-2 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="font-semibold text-indigo-900 flex items-center gap-1">
                   <Key className="w-3 h-3 text-indigo-600" />
-                  API Key hoặc đăng nhập Gmail:
+                  Gemini API Key:
                 </span>
                 <a
                   href="https://aistudio.google.com/app/apikey"
@@ -598,11 +536,9 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                   }
                 }}
                 placeholder={
-                  userGmail
-                    ? "Nhập hoặc dán đề bài hình học tại đây (Hỗ trợ nhiều dòng, Enter để gửi, Shift+Enter xuống dòng)..."
-                    : mode === "gemini" && !apiKey.trim()
-                      ? "Dán Gemini API Key ở trên hoặc Đăng nhập Gmail để mở khóa vẽ tự động bằng AI..."
-                      : "Nhập: Vẽ tam giác vuông ABC, cho đường tròn (O), tiếp tuyến MA MB... (Enter để vẽ)"
+                  mode === "gemini" && !apiKey.trim()
+                    ? "Dán Gemini API Key ở trên để mở khóa vẽ tự động bằng AI..."
+                    : "Nhập: Vẽ tam giác vuông ABC, cho đường tròn (O), tiếp tuyến MA MB... (Enter để vẽ)"
                 }
                 disabled={isLoading}
                 className="w-full p-2.5 text-xs border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 bg-slate-50 border-slate-300 focus:border-blue-500 hover:bg-white focus:bg-white resize-none shadow-2xs font-sans leading-relaxed"
@@ -758,9 +694,11 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                 onChange={(e) => setSelectedModel(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2 text-xs text-slate-800 font-medium focus:outline-hidden focus:border-blue-500"
               >
-                <option value="gemini-3.8-flash">
-                  gemini-3.8-flash (Model chuẩn văn bản • Phản hồi dưới 5s)
-                </option>
+                {VALID_TEXT_MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -777,80 +715,6 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
         </div>
       )}
 
-      {/* Modal Đăng Nhập Gmail (Miễn phí • Tự nạp Agent) */}
-      {isGmailModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4">
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <h3 className="text-sm font-bold text-slate-800">
-                  Đăng Nhập Tài Khoản Gmail
-                </h3>
-              </div>
-              <button
-                onClick={() => setIsGmailModalOpen(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Đăng nhập Gmail để sử dụng hệ thống AI và bộ giải hình học tự động
-              EduKit mà <b>không cần cấu hình mã API Key phức tạp</b>.
-            </p>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleLoginGmail(gmailInput || "giaovien.toan@gmail.com");
-              }}
-              className="space-y-3"
-            >
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                  Nhập địa chỉ Gmail của bạn:
-                </label>
-                <input
-                  type="email"
-                  value={gmailInput}
-                  onChange={(e) => setGmailInput(e.target.value)}
-                  placeholder="ví dụ: giaovien.toan@gmail.com"
-                  className="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-300 rounded-xl focus:outline-hidden focus:border-blue-500 font-sans"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20"
-              >
-                Đăng Nhập & Kích Hoạt Agent
-              </button>
-
-              <div className="relative flex py-1 items-center">
-                <div className="flex-grow border-t border-slate-200"></div>
-                <span className="flex-shrink mx-2 text-[10px] text-slate-400 uppercase font-semibold">
-                  Hoặc
-                </span>
-                <div className="flex-grow border-t border-slate-200"></div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleLoginGmail("giaovien.toan@gmail.com")}
-                className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition-colors flex items-center justify-center gap-1.5"
-              >
-                <span>
-                  Sử dụng tài khoản Demo: <b>giaovien.toan@gmail.com</b>
-                </span>
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 };

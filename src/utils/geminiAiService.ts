@@ -43,26 +43,32 @@ export interface GeminiApiResponse {
   polygons?: StructuredPolygon[];
   circles?: StructuredCircle[];
   rawText?: string;
+  /** Model thực sự đã dùng (có thể là model dự phòng) */
+  model?: string;
   error?: string;
 }
 
 /**
- * 1. KHÓA CỨNG DUY NHẤT MODEL gemini-3.8-flash
- * Loại bỏ hoàn toàn gemini-3.8-flash-lite (404) và các model rác
+ * Danh sách model theo thứ tự ưu tiên. Nếu Google trả về 404 (model không tồn tại
+ * hoặc đã ngừng hỗ trợ), tự động thử model tiếp theo. Model chạy được sẽ được nhớ lại.
  */
-export const VALID_TEXT_MODELS = ['gemini-3.8-flash'];
+export const VALID_TEXT_MODELS = ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
 
-export function sanitizeModelName(_name?: string): string {
-  return 'gemini-3.8-flash';
+export function sanitizeModelName(name?: string): string {
+  return name && VALID_TEXT_MODELS.includes(name) ? name : VALID_TEXT_MODELS[0];
 }
 
 export function getCachedModel(): string {
-  return 'gemini-3.8-flash';
+  try {
+    return sanitizeModelName(localStorage.getItem('edukit_gemini_model') || undefined);
+  } catch {
+    return VALID_TEXT_MODELS[0];
+  }
 }
 
-export function setCachedModel(_modelName: string) {
+export function setCachedModel(modelName: string) {
   try {
-    localStorage.setItem('edukit_gemini_model', 'gemini-3.8-flash');
+    localStorage.setItem('edukit_gemini_model', sanitizeModelName(modelName));
   } catch {}
 }
 
@@ -89,7 +95,7 @@ export function extractCleanJson(rawText: string): any {
 export async function callGeminiGeometryAi(
   prompt: string,
   apiKey: string,
-  _model?: string,
+  model?: string,
   canvasWidth: number = 1000,
   canvasHeight: number = 700,
   externalSignal?: AbortSignal
@@ -113,9 +119,12 @@ export async function callGeminiGeometryAi(
     };
   }
 
-  // 1. Khóa cứng DUY NHẤT model gemini-3.8-flash, loại bỏ hoàn toàn các model khác
-  const curModel = 'gemini-3.8-flash';
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${curModel}:generateContent?key=${cleanKey}`;
+  // 1. Model ưu tiên (đã nhớ từ lần chạy thành công trước), sau đó là các model dự phòng
+  const preferredModel = model ? sanitizeModelName(model) : getCachedModel();
+  const modelQueue = [preferredModel, ...VALID_TEXT_MODELS.filter((m) => m !== preferredModel)];
+  let curModel = modelQueue[0];
+  const endpointFor = (m: string) =>
+    `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
 
   const systemInstruction = `
 Bạn là Trợ lý Dựng hình Toán học cho hệ thống EduKit Geometry.
@@ -288,10 +297,12 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
       generationConfig.thinkingConfig = { thinkingBudget: 512 };
     }
 
-    const response = await fetch(endpoint, {
+    const sendRequest = (m: string) => fetch(endpointFor(m), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Gửi key qua header thay vì URL để key không bị ghi vào log/lịch sử
+        'x-goog-api-key': cleanKey,
       },
       body: JSON.stringify({
         contents: [
@@ -308,6 +319,14 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
       }),
       signal: controller.signal,
     });
+
+    let response = await sendRequest(curModel);
+    // Model không tồn tại (404) → thử model dự phòng tiếp theo
+    for (let i = 1; response.status === 404 && i < modelQueue.length; i++) {
+      console.warn(`[Gemini API] Model ${curModel} không khả dụng (404), thử ${modelQueue[i]}...`);
+      curModel = modelQueue[i];
+      response = await sendRequest(curModel);
+    }
 
     clearTimeout(internalTimeout);
     if (externalSignal) {
@@ -409,6 +428,7 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
       rawParsedJson: parsed,
       elementCount: constructRes.elements.length,
       rawText: candidateText,
+      model: curModel,
     };
   } catch (err: any) {
     clearTimeout(internalTimeout);
