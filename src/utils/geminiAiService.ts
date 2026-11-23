@@ -173,6 +173,8 @@ QUY TẮC BẮT BUỘC:
   Chỉ được bỏ qua các điểm do "commands" tự tính ra (chân đường cao "foot", trung điểm, giao điểm, tiếp điểm, đầu kia đường kính).
 - Chọn tọa độ đúng với giả thiết đề bài (vuông tại A, cân tại A, độ dài cạnh, điểm nằm trên đường tròn...) và có dáng tổng quát, dễ nhìn.
 - Điểm nằm trên đường tròn tâm O bán kính R phải có khoảng cách tới O đúng bằng R.
+- Trong "commands": mỗi lệnh chỉ dùng đúng các trường như mẫu; "to", "of", "obj1", "obj2", "names" luôn là MẢNG tên điểm (vd ["B", "C"]);
+  PERPENDICULAR luôn có "foot". Không lặp lại cùng một lệnh.
 - MỖI yếu tố đề bài nêu ra PHẢI có lệnh tương ứng trong "commands" (không được chỉ nhắc trong "reasoning"):
   đường cao → PERPENDICULAR; trung điểm → MIDPOINT; giao điểm / "cắt nhau tại" / "đồng quy tại" → INTERSECT;
   tiếp tuyến → TANGENTS; đường kính → DIAMETER. Trước khi trả lời, đối chiếu lại đề bài để không bỏ sót yếu tố nào.
@@ -321,13 +323,17 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
                 y: { type: 'NUMBER' },
                 center: { type: 'STRING' },
                 r: { type: 'NUMBER' },
-                from: { type: 'STRING' },
-                to: { type: 'STRING' },
+                from: { type: 'STRING', description: 'Tên MỘT điểm, vd "A"' },
+                to: {
+                  type: 'ARRAY',
+                  items: { type: 'STRING' },
+                  description: 'Mảng tên điểm, vd ["B", "C"] (PERPENDICULAR: 2 đầu cạnh; SEGMENT: ["B"])',
+                },
                 circle: { type: 'STRING' },
                 through: { type: 'STRING' },
                 otherEnd: { type: 'STRING' },
                 of: { type: 'ARRAY', items: { type: 'STRING' } },
-                foot: { type: 'STRING' },
+                foot: { type: 'STRING', description: 'BẮT BUỘC với PERPENDICULAR: tên chân đường cao, vd "D"' },
                 obj1: { type: 'ARRAY', items: { type: 'STRING' } },
                 obj2: { type: 'ARRAY', items: { type: 'STRING' } },
                 type: { type: 'STRING' },

@@ -242,10 +242,12 @@ export interface ConstructionResult {
  * using exact analytical geometry and auto-fits & centers the resulting figures on the canvas.
  */
 /** Tách danh sách tên điểm từ mảng hoặc chuỗi ("BC", "B,C", "B C" → ["B","C"]). */
-function toNameList(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+export function toNameList(value: unknown): string[] {
+  // Bỏ ký tự rác AI hay chèn vào: dấu ngoặc, nháy ('["B","C"]', "(A)", "'M'")
+  const clean = (v: unknown) => String(v).replace(/[\[\]"'`()]/g, ' ').trim();
+  if (Array.isArray(value)) return value.flatMap((v) => toNameList(clean(v)));
   if (typeof value !== 'string') return [];
-  const str = value.trim();
+  const str = clean(value);
   if (!str) return [];
   if (/[,\s]/.test(str)) return str.split(/[,\s]+/).filter(Boolean);
   // "BC" (2 chữ in hoa liền nhau) → ["B", "C"]; "A1" hoặc "M" giữ nguyên
@@ -273,7 +275,7 @@ function autoPlaceMissingBasePoints(
         if (c.name) derived.add(String(c.name).trim());
         break;
       case 'PERPENDICULAR':
-        derived.add(String(c.foot || 'H').trim());
+        if (c.foot || c.name) derived.add(String(c.foot || c.name).trim());
         break;
       case 'TANGENTS':
       case 'TRIANGLE':
@@ -499,7 +501,14 @@ export function executeConstructionCommands(
     : Array.isArray(rawInput?.commands)
       ? rawInput.commands
       : [];
-  const commands = normalizeConstructionCommands(rawCommands);
+  // Bỏ các lệnh trùng lặp (AI đôi khi lặp lại cùng một lệnh nhiều lần)
+  const seenCommands = new Set<string>();
+  const commands = normalizeConstructionCommands(rawCommands).filter((c) => {
+    const key = JSON.stringify(c);
+    if (seenCommands.has(key)) return false;
+    seenCommands.add(key);
+    return true;
+  });
 
   // 2b. TỰ ĐẶT VỊ TRÍ CÁC ĐIỂM GỐC MÀ AI QUÊN CHO TỌA ĐỘ
   // AI đôi khi chỉ trả về segments/polygons/commands (vd: đoạn AB, BC, CA + đường cao AH)
@@ -730,7 +739,13 @@ export function executeConstructionCommands(
         const from = (cmd.from || '').trim();
         const toList = toNameList(cmd.to);
         const [pB, pC] = toList;
-        const foot = (cmd.foot || 'H').trim();
+        // Tên chân đường cao: "foot" (đúng mẫu) hoặc "name" (AI hay ghi nhầm).
+        // Thiếu cả hai thì bỏ qua lệnh, tránh ghi đè lên điểm H có sẵn.
+        const foot = String(cmd.foot || cmd.name || '').trim();
+        if (!foot) {
+          console.warn('PERPENDICULAR thiếu tên chân đường cao (foot), bỏ qua:', cmd);
+          break;
+        }
 
         const ptA = getPt(from);
         const ptB = getPt(pB);
@@ -792,9 +807,9 @@ export function executeConstructionCommands(
       }
 
       case 'SEGMENT': {
-        // {"cmd": "SEGMENT", "from": "A", "to": "B", "dashed": false}
-        const from = (cmd.from || '').trim();
-        const to = (typeof cmd.to === 'string' ? cmd.to : '').trim();
+        // {"cmd": "SEGMENT", "from": "A", "to": "B"} — chấp nhận cả to: ["B"] hoặc from: "AB"
+        const ends = [...toNameList(cmd.from), ...toNameList(cmd.to)];
+        const [from, to] = ends;
         if (from && to) {
           addSegment(from, to, Boolean(cmd.dashed));
           executedLog.push(`Đoạn thẳng ${from}${to}${cmd.dashed ? ' (nét đứt)' : ''}`);

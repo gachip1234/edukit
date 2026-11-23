@@ -8,6 +8,8 @@
  * CHƯA được AI định nghĩa. Điểm AI đã cho thì giữ nguyên.
  */
 
+import { toNameList } from './constructionEngine';
+
 type AnyCommand = Record<string, any>;
 
 export interface AugmentResult {
@@ -17,16 +19,7 @@ export interface AugmentResult {
   added: string[];
 }
 
-function pairOf(value: unknown): string[] {
-  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
-  if (typeof value === 'string') {
-    const str = value.trim();
-    if (/[,\s]/.test(str)) return str.split(/[,\s]+/).filter(Boolean);
-    if (/^[A-Z]{2,}$/.test(str)) return str.split('');
-    return str ? [str] : [];
-  }
-  return [];
-}
+const pairOf = toNameList;
 
 export function augmentWithProblemText(aiData: any, problemText: string): AugmentResult {
   const added: string[] = [];
