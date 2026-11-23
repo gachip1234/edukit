@@ -815,11 +815,12 @@ export const App: React.FC = () => {
       elements,
       selectedIds,
       "all",
+      false,
     );
     setIsExporting(false);
     if (result.dataUrl) {
       downloadDataUrl(result.dataUrl, `hinh-hoc-toan-${Date.now()}.png`);
-      showToast("Đã tải xuống ảnh PNG trong suốt độ nét cao!");
+      showToast("Đã tải xuống ảnh PNG (nền trắng) — chèn vào Word bằng Insert → Pictures.");
     } else {
       showToast(result.message, "error");
     }
