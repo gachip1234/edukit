@@ -18,7 +18,11 @@ import {
   Brain,
   X,
   Compass,
+  Mic,
+  MicOff,
 } from "lucide-react";
+import { useSpeechInput } from "../utils/useSpeechInput";
+import { normalizeSpokenGeometry } from "../utils/speechNormalize";
 
 import { getCachedModel, setCachedModel, VALID_TEXT_MODELS } from "../utils/geminiAiService";
 
@@ -235,6 +239,36 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
       clearTimeout(timeoutId);
       setIsLoading(false);
     }
+  };
+
+  // ===== Nhập bằng giọng nói (Web Speech API, tiếng Việt) =====
+  const handleSendRef = useRef(handleSend);
+  handleSendRef.current = handleSend;
+  const voiceBaseRef = useRef("");
+  const speech = useSpeechInput({
+    lang: "vi-VN",
+    onInterim: (text) => {
+      const base = voiceBaseRef.current;
+      setInputPrompt(base ? `${base} ${text}` : text);
+    },
+    onFinal: (text) => {
+      const base = voiceBaseRef.current;
+      const spoken = normalizeSpokenGeometry(text);
+      const full = (base ? `${base} ${spoken}` : spoken).trim();
+      setInputPrompt("");
+      void handleSendRef.current(full);
+    },
+    onError: (message) => {
+      setInputPrompt(voiceBaseRef.current);
+      setMessages((prev) => [
+        ...prev,
+        { id: `asst-mic-${Date.now()}`, sender: "assistant", text: `🎤 ${message}`, timestamp: Date.now() },
+      ]);
+    },
+  });
+  const handleMicClick = () => {
+    if (!speech.isListening) voiceBaseRef.current = inputPrompt.trim();
+    speech.toggle();
   };
 
   const handleClearChat = () => {
@@ -543,6 +577,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
+                    if (speech.isListening) speech.stop();
                     handleSend();
                   }
                 }}
@@ -552,8 +587,27 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                     : "Nhập: Vẽ tam giác vuông ABC, cho đường tròn (O), tiếp tuyến MA MB... (Enter để vẽ)"
                 }
                 disabled={isLoading}
-                className="w-full p-2.5 text-xs border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 bg-slate-50 border-slate-300 focus:border-blue-500 hover:bg-white focus:bg-white resize-none shadow-2xs font-sans leading-relaxed"
+                className="w-full p-2.5 pb-12 text-xs border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 bg-slate-50 border-slate-300 focus:border-blue-500 hover:bg-white focus:bg-white resize-none shadow-2xs font-sans leading-relaxed"
               />
+              {speech.supported && (
+                <button
+                  type="button"
+                  onClick={handleMicClick}
+                  disabled={isLoading}
+                  title={speech.isListening ? "Đang nghe... bấm để dừng" : "Nói đề bài bằng tiếng Việt (vd: vẽ tam giác a b c)"}
+                  aria-label={speech.isListening ? "Dừng ghi âm" : "Nhập bằng giọng nói"}
+                  aria-pressed={speech.isListening}
+                  className={`absolute right-13 bottom-3 p-2 rounded-xl transition-all active:scale-95 ${
+                    speech.isListening
+                      ? "bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/30 animate-pulse"
+                      : isLoading
+                        ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                        : "bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 border border-slate-200"
+                  }`}
+                >
+                  {speech.isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={!inputPrompt.trim() || isLoading}
@@ -569,7 +623,11 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
             </div>
             <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
               <span>
-                Ấn <b>Enter</b> để vẽ hình • <b>Shift + Enter</b> xuống dòng
+                {speech.isListening ? (
+                  <span className="text-red-500 font-semibold">● Đang nghe — nói xong sẽ tự vẽ</span>
+                ) : (
+                  <>Ấn <b>Enter</b> để vẽ hình{speech.supported && <> • 🎤 nói để vẽ</>}</>
+                )}
               </span>
               <span>{inputPrompt.length} ký tự</span>
             </div>
