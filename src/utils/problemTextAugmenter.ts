@@ -373,6 +373,42 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     }
   }
 
+  // ---- 9. Ký hiệu bằng nhau nêu trong đề ----
+  const equalSeg = (pairs: [string, string][], why: string) => {
+    if (pairs.length >= 2 && pairs.every(([a, b]) => has(a) && has(b))) {
+      commands.push({ cmd: 'EQUAL_SEGMENTS', args: pairs.flat() });
+      added.push(`Ký hiệu ${why}`);
+    }
+  };
+  // "AB = AC", "MA = MB = MC" (bỏ qua "AB = 3cm")
+  for (const m of text.matchAll(new RegExp(`(?<![A-Za-z])(${PAIR}(?:\\s*=\\s*${PAIR})+)(?![A-Za-z0-9])`, 'g'))) {
+    const pairs = m[1].split(/\s*=\s*/).map(splitPair).filter(Boolean) as [string, string][];
+    equalSeg(pairs, m[1].replace(/\s+/g, ' '));
+  }
+  // "tam giác ABC cân tại A" → AB = AC; "tam giác ABC đều" / "tam giác đều ABC" → AB = BC = CA
+  const isoMatch = text.match(/tam giác\s+([A-Z])([A-Z])([A-Z])\s+(?:vuông\s+)?cân\s+tại\s+([A-Z])/);
+  if (isoMatch) {
+    const apex = isoMatch[4];
+    const others = [isoMatch[1], isoMatch[2], isoMatch[3]].filter((v) => v !== apex);
+    if (others.length === 2) equalSeg([[apex, others[0]], [apex, others[1]]], `${apex}${others[0]} = ${apex}${others[1]} (tam giác cân)`);
+  }
+  const eqTri = text.match(/tam giác\s+đều\s+([A-Z])([A-Z])([A-Z])|tam giác\s+([A-Z])([A-Z])([A-Z])\s+đều/);
+  if (eqTri) {
+    const [a, b, c] = eqTri[1] ? [eqTri[1], eqTri[2], eqTri[3]] : [eqTri[4], eqTri[5], eqTri[6]];
+    equalSeg([[a, b], [b, c], [c, a]], `${a}${b} = ${b}${c} = ${c}${a} (tam giác đều)`);
+  }
+  // "góc ABD = góc DBC", "∠ABD = ∠DBC"
+  for (const m of text.matchAll(/(?:góc|∠)\s*([A-Z])([A-Z])([A-Z])\s*=\s*(?:góc|∠)\s*([A-Z])([A-Z])([A-Z])/g)) {
+    const triples: [string, string, string][] = [
+      [m[1], m[2], m[3]],
+      [m[4], m[5], m[6]],
+    ];
+    if (triples.every((t) => t.every(has))) {
+      commands.push({ cmd: 'EQUAL_ANGLES', args: triples.flat() });
+      added.push(`Ký hiệu góc ${m[1]}${m[2]}${m[3]} = góc ${m[4]}${m[5]}${m[6]}`);
+    }
+  }
+
   if (added.length > 0) {
     data.commands = commands;
     data.segments = segments;

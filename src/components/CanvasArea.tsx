@@ -37,7 +37,7 @@ import {
 } from '../utils/mathUtils';
 import type { EdgeTarget } from '../utils/mathUtils';
 import { GridLayer } from './GridLayer';
-import { computeVisibleLine } from '../utils/lineLabels';
+import { computeVisibleLine, computeTickMarks } from '../utils/lineLabels';
 import { LatexShape } from './LatexShape';
 
 interface CanvasAreaProps {
@@ -1720,7 +1720,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
             }
 
               case 'segment': {
+                // Ký hiệu đoạn bằng nhau (gạch nhỏ ở giữa đoạn)
+                const tickLines = el.ticks ? computeTickMarks(el.x1, el.y1, el.x2, el.y2, el.ticks) : [];
                 return (
+                  <React.Fragment key={el.id}>
+                  {tickLines.map((pts, i) => (
+                    <KonvaLine key={`${el.id}-tick${i}`} points={pts} stroke={el.stroke} strokeWidth={1.6} listening={false} />
+                  ))}
                   <KonvaLine
                     key={el.id}
                     id={el.id}
@@ -1842,6 +1848,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       onElementsChange(updated);
                     }}
                   />
+                  </React.Fragment>
                 );
               }
 

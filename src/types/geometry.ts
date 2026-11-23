@@ -64,6 +64,8 @@ export interface SegmentElement extends BaseElement {
   y1: number;
   x2: number;
   y2: number;
+  /** Ký hiệu đoạn bằng nhau: số gạch nhỏ ở giữa đoạn (1, 2, 3). Các đoạn cùng số gạch là bằng nhau. */
+  ticks?: number;
 }
 
 export interface LineElement extends BaseElement {

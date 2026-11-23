@@ -136,6 +136,17 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
+      // 2a2. EQUAL_SEGMENTS(A, B, A, C) / EQUAL_ANGLES(B, A, D, D, A, C): ký hiệu bằng nhau
+      const equalCmd = trimmed.match(/^(EQUAL_SEGMENTS|EQUAL_ANGLES|BangNhau|GocBangNhau)\s*\(([^)]*)\)/i);
+      if (equalCmd) {
+        const kind = equalCmd[1].toUpperCase();
+        result.push({
+          cmd: kind === 'BANGNHAU' ? 'EQUAL_SEGMENTS' : kind === 'GOCBANGNHAU' ? 'EQUAL_ANGLES' : kind,
+          args: equalCmd[2].split(',').map((a) => a.trim()).filter(Boolean),
+        });
+        continue;
+      }
+
       // 2b. BISECTOR(B, A, C, D): phân giác góc BAC (đỉnh A ở GIỮA, như cách viết "góc BAC") cắt BC tại D
       const bisMatch = trimmed.match(/^(?:BISECTOR|PhanGiac)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (bisMatch) {
@@ -435,6 +446,9 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
     case 'RAY':
     case 'LINE':
       return { inputs: Array.isArray(c.args) ? c.args.slice(0, 2) : [...one(c.from), ...one(c.through)], outputs: [] };
+    case 'EQUAL_SEGMENTS':
+    case 'EQUAL_ANGLES':
+      return { inputs: (Array.isArray(c.args) ? c.args : []).flatMap((a: string) => toNameList(a)), outputs: [] };
     case 'RAY_OPPOSITE': {
       const [from, away, third] = oppositeArgs(c);
       return { inputs: [from, away].filter(Boolean), outputs: third && /^[A-Z]/.test(third) ? [third] : [] };
@@ -495,6 +509,18 @@ export function executeConstructionCommands(
   // Đường thẳng / tia: đi qua điểm "from" và điểm "through" (điểm có tên, hoặc điểm phụ ẩn dùng chỉ hướng)
   const lineObjs: { from: string; through: string; isRay: boolean; startLabel?: string; endLabel?: string; dashed?: boolean }[] = [];
   const helperPts = new Map<string, MathPoint>(); // điểm phụ ẩn (không vẽ), chỉ dùng xác định hướng
+  // Ký hiệu bằng nhau: mỗi nhóm là các đoạn [A, B] (hoặc các góc [P1, Đỉnh, P2]) bằng nhau.
+  // Nhóm thứ 1 dùng 1 gạch / 1 cung, nhóm thứ 2 dùng 2 gạch / 2 cung...
+  const equalSegGroups: [string, string][][] = [];
+  const equalAngleGroups: [string, string, string][][] = [];
+  const addEqualSegs = (group: [string, string][]) => {
+    const key = (g: [string, string][]) => g.map((p) => [...p].sort().join('')).sort().join('|');
+    if (group.length >= 2 && !equalSegGroups.some((g) => key(g) === key(group))) equalSegGroups.push(group);
+  };
+  const addEqualAngles = (group: [string, string, string][]) => {
+    const key = (g: [string, string, string][]) => g.map(([a, v, b]) => v + [a, b].sort().join('')).sort().join('|');
+    if (group.length >= 2 && !equalAngleGroups.some((g) => key(g) === key(group))) equalAngleGroups.push(group);
+  };
   let helperCount = 0;
   const addHelper = (x: number, y: number) => {
     const name = `__dir${++helperCount}`;
@@ -878,6 +904,11 @@ export function executeConstructionCommands(
           const mx = (ptA.x + ptB.x) / 2;
           const my = (ptA.y + ptB.y) / 2;
           points.set(name, { name, x: Math.round(mx * 1000) / 1000, y: Math.round(my * 1000) / 1000 });
+          // Ký hiệu: hai nửa bằng nhau
+          addEqualSegs([
+            [pA, name],
+            [name, pB],
+          ]);
           executedLog.push(`Trung điểm ${name} của đoạn ${pA}${pB}`);
         }
         break;
@@ -1005,7 +1036,9 @@ export function executeConstructionCommands(
             }
             through = third;
           } else {
-            through = addHelper(o.x + dx, o.y + dy);
+            // Điểm chỉ hướng cách gốc 2 đơn vị → tia đối dài vừa phải như các tia khác
+            const dlen = Math.hypot(dx, dy) || 1;
+            through = addHelper(o.x + (dx / dlen) * 2, o.y + (dy / dlen) * 2);
             endLabel = third || undefined;
           }
           lineObjs.push({ from, through, isRay: true, endLabel, dashed: Boolean(cmd.dashed) });
@@ -1038,6 +1071,21 @@ export function executeConstructionCommands(
         break;
       }
 
+      case 'EQUAL_SEGMENTS':
+      case 'EQUAL_ANGLES': {
+        // Tham số có thể là từng điểm (A, B, A, C) hoặc từng cặp/bộ ba ("AB", "AC" / "BAD", "DAC")
+        const names = (Array.isArray(cmd.args) ? cmd.args : toNameList(cmd.names)).flatMap((a: string) => toNameList(a));
+        const size = cmd.cmd === 'EQUAL_SEGMENTS' ? 2 : 3;
+        const parts: string[][] = [];
+        for (let i = 0; i + size <= names.length; i += size) parts.push(names.slice(i, i + size));
+        if (parts.length >= 2 && parts.every((p) => p.every((n) => getPt(n)))) {
+          if (size === 2) addEqualSegs(parts as [string, string][]);
+          else addEqualAngles(parts as [string, string, string][]);
+          executedLog.push(`Ký hiệu bằng nhau: ${parts.map((p) => (size === 3 ? 'góc ' : '') + p.join('')).join(' = ')}`);
+        }
+        break;
+      }
+
       case 'BISECTOR': {
         // {"cmd": "BISECTOR", "from": "A", "to": ["B", "C"], "foot": "D"}: phân giác góc BAC cắt BC tại D
         const from = String(cmd.from || '').trim();
@@ -1055,6 +1103,11 @@ export function executeConstructionCommands(
             const dy = (ac * ptB.y + ab * ptC.y) / (ab + ac);
             points.set(foot, { name: foot, x: Math.round(dx * 1000) / 1000, y: Math.round(dy * 1000) / 1000 });
             addSegment(from, foot, Boolean(cmd.dashed));
+            // Ký hiệu: hai góc bằng nhau
+            addEqualAngles([
+              [pB, from, foot],
+              [foot, from, pC],
+            ]);
             executedLog.push(`Phân giác ${from}${foot} của góc ${pB}${from}${pC}`);
           }
         }
@@ -1326,6 +1379,66 @@ export function executeConstructionCommands(
       finalElements.push(angleEl);
     }
   }
+
+  // 4b. Ký hiệu đoạn bằng nhau (gạch nhỏ) và góc bằng nhau (cung)
+  const segEls = finalElements.filter((e): e is SegmentElement => e.type === 'segment');
+  equalSegGroups.slice(0, 3).forEach((group, gi) => {
+    for (const [a, b] of group) {
+      const pa = pointElementMap.get(a);
+      const pb = pointElementMap.get(b);
+      if (!pa || !pb) continue;
+      const same = (x1: number, y1: number, x2: number, y2: number) =>
+        Math.hypot(x1 - pa.x, y1 - pa.y) < 1 && Math.hypot(x2 - pb.x, y2 - pb.y) < 1;
+      const existing = segEls.find((s) => same(s.x1, s.y1, s.x2, s.y2) || same(s.x2, s.y2, s.x1, s.y1));
+      if (existing) {
+        existing.ticks = gi + 1;
+      } else {
+        // Đoạn chưa vẽ riêng (vd: nửa BM của cạnh BC) → thêm đoạn trùng lên, chỉ để mang ký hiệu
+        const tickSeg: SegmentElement = {
+          id: `segment-tick-${a}${b}-${now}-${Math.random().toString(36).substr(2, 4)}`,
+          type: 'segment',
+          x1: pa.x,
+          y1: pa.y,
+          x2: pb.x,
+          y2: pb.y,
+          ticks: gi + 1,
+          stroke: '#2563eb',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+        };
+        finalElements.push(tickSeg);
+        segEls.push(tickSeg);
+      }
+    }
+  });
+  const arcTypes = ['single', 'double', 'triple'] as const;
+  equalAngleGroups.slice(0, 3).forEach((group, gi) => {
+    for (const [p1, v, p2] of group) {
+      const vPt = pointElementMap.get(v);
+      const p1Pt = pointElementMap.get(p1);
+      const p2Pt = pointElementMap.get(p2);
+      if (!vPt || !p1Pt || !p2Pt) continue;
+      finalElements.push({
+        id: `angle-eq-${v}-${now}-${Math.random().toString(36).substr(2, 4)}`,
+        type: 'angle',
+        vx: vPt.x,
+        vy: vPt.y,
+        p1x: p1Pt.x,
+        p1y: p1Pt.y,
+        p2x: p2Pt.x,
+        p2y: p2Pt.y,
+        size: 20 + gi * 4,
+        arcType: arcTypes[gi],
+        stroke: '#ea580c',
+        strokeWidth: 1.5,
+        strokeStyle: 'solid',
+        fill: 'transparent',
+        vertexId: vPt.id,
+        p1Id: p1Pt.id,
+        p2Id: p2Pt.id,
+      } as AngleElement);
+    }
+  });
 
   // 5. Tạo các miền đa giác nếu có
   for (const poly of polygons) {

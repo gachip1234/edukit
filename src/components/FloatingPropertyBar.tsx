@@ -146,6 +146,27 @@ export const FloatingPropertyBar: React.FC<FloatingPropertyBarProps> = ({
         </div>
       )}
 
+      {/* Ký hiệu đoạn bằng nhau: số gạch nhỏ ở giữa đoạn (các đoạn cùng số gạch là bằng nhau) */}
+      {selectedElement.type === 'segment' && (
+        <div className="flex items-center gap-1 border-r border-slate-200 pr-2">
+          <span className="text-xs font-medium text-slate-500">Ký hiệu:</span>
+          {[0, 1, 2, 3].map((n) => (
+            <button
+              key={n}
+              onClick={() => onUpdateElement({ ticks: n } as Partial<GeoElement>)}
+              className={`w-7 h-6 text-xs font-bold rounded border ${
+                (selectedElement.ticks || 0) === n
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
+              }`}
+              title={n === 0 ? 'Không ký hiệu' : `${n} gạch: đánh dấu các đoạn bằng nhau`}
+            >
+              {n === 0 ? '–' : '|'.repeat(n)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Nhãn của tia / đường thẳng: tia Ox → "x"; đường thẳng xy → "x", "y"; đường thẳng d → "d" */}
       {selectedElement.type === 'line' && (
         <div className="flex items-center gap-1.5 border-r border-slate-200 pr-2">
