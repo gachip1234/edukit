@@ -37,7 +37,7 @@ import {
 } from '../utils/mathUtils';
 import type { EdgeTarget } from '../utils/mathUtils';
 import { GridLayer } from './GridLayer';
-import { computeVisibleLine, computeTickMarks } from '../utils/lineLabels';
+import { computeVisibleLine, computeTickMarks, lineExtentPoints } from '../utils/lineLabels';
 import { LatexShape } from './LatexShape';
 
 interface CanvasAreaProps {
@@ -1860,6 +1860,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               }
 
               case 'line': {
+                // Đường thẳng / tia vẽ vừa đủ: qua các điểm trên nó và cắt các đối tượng khác thêm một đoạn ngắn
                 const visible = computeVisibleLine(
                   el.x1,
                   el.y1,
@@ -1868,6 +1869,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                   dimensions.width / zoom,
                   dimensions.height / zoom,
                   Boolean(el.isRay),
+                  lineExtentPoints(el, elements),
                 );
                 const [lx1, ly1, lx2, ly2] = visible.points;
                 const lineLabelProps = {
