@@ -60,27 +60,29 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onToggleChat,
 }) => {
   return (
-    <header className="h-16 bg-white border-b border-slate-200 px-4 flex items-center justify-between z-20 shadow-xs select-none">
+    <header className="h-16 short:h-12 bg-white border-b border-slate-200 px-2 md:px-4 flex items-center justify-between gap-2 min-[1700px]:gap-1 z-20 shadow-xs select-none">
       {/* Brand & Title */}
-      <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+      <div className="flex items-center gap-2 md:gap-3 shrink-0">
+        <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
           <Shapes className="w-5 h-5" />
         </div>
         <div>
           <h1 className="text-base font-bold text-slate-800 leading-tight flex items-center gap-2">
-            EduKit Geometry
-            <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
+            EduKit<span className="hidden sm:inline">Geometry</span>
+            <span className="hidden md:inline short:hidden text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
               Toán Học
             </span>
           </h1>
-          <p className="text-[11px] text-slate-400 font-medium">
+          <p className="hidden md:block short:hidden text-[11px] text-slate-400 font-medium">
             Vẽ hình học & Xuất ảnh PNG trong suốt cho PowerPoint
           </p>
         </div>
       </div>
 
+      {/* Các nhóm nút: trên màn hình nhỏ gom thành một dải cuộn ngang; từ 2xl (1536px) trở lên (min-[1700px]:contents) giữ bố cục cũ */}
+      <div className="flex items-center gap-2 min-w-0 overflow-x-auto no-scrollbar min-[1700px]:contents">
       {/* Grid & Snap Controls */}
-      <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
+      <div className="flex items-center gap-1.5 shrink-0 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
         <button
           onClick={onToggleGrid}
           title="Bật/Tắt lưới tọa độ"
@@ -91,7 +93,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           }`}
         >
           <Grid className="w-3.5 h-3.5" />
-          <span>Lưới ô vuông</span>
+          <span className="hidden min-[1700px]:inline short:hidden">Lưới ô vuông</span>
         </button>
 
         <button
@@ -104,7 +106,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           }`}
         >
           <span className="text-xs font-serif font-bold italic">Oxy</span>
-          <span>Trục tọa độ</span>
+          <span className="hidden min-[1700px]:inline short:hidden">Trục tọa độ</span>
         </button>
 
         <div className="w-px h-4 bg-slate-300 mx-0.5" />
@@ -119,7 +121,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           }`}
         >
           <Magnet className="w-3.5 h-3.5" />
-          <span>Bắt điểm</span>
+          <span className="hidden min-[1700px]:inline short:hidden">Bắt điểm</span>
         </button>
 
         {onOpenLabelSettings && (
@@ -132,14 +134,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             >
               <Type className="w-3.5 h-3.5 text-blue-600" />
               <span className="font-serif italic font-bold">Aa</span>
-              <span>Định dạng nhãn</span>
+              <span className="hidden min-[1700px]:inline short:hidden">Định dạng nhãn</span>
             </button>
           </>
         )}
       </div>
 
       {/* Zoom controls */}
-      <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 px-1.5 py-1 rounded-xl">
+      <div className="flex items-center gap-1 shrink-0 bg-slate-50 border border-slate-200 px-1.5 py-1 rounded-xl">
         <button
           onClick={onZoomOut}
           title="Thu nhỏ"
@@ -164,7 +166,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
       </div>
 
       {/* Save Project Session & Open Project File */}
-      <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
+      <div className="flex items-center gap-1.5 shrink-0 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
         {onOpenProject && (
           <button
             onClick={onOpenProject}
@@ -172,7 +174,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 hover:bg-white transition-all shadow-xs"
           >
             <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-            <span>Mở file</span>
+            <span className="hidden min-[1700px]:inline short:hidden">Mở file</span>
           </button>
         )}
 
@@ -183,13 +185,13 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all shadow-xs"
           >
             <Save className="w-3.5 h-3.5" />
-            <span>Lưu file</span>
+            <span className="hidden min-[1700px]:inline short:hidden">Lưu file</span>
           </button>
         )}
       </div>
 
       {/* Export Actions: Copy All & Copy Selection */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {/* Copy Selection Button */}
         <button
           onClick={onCopySelection}
@@ -202,7 +204,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           }`}
         >
           <Scissors className="w-3.5 h-3.5 text-amber-600" />
-          <span>Sao chép vùng chọn</span>
+          <span className="hidden min-[1700px]:inline short:hidden">Sao chép vùng chọn</span>
           {selectedCount > 0 && (
             <span className="bg-amber-200 text-amber-900 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
               {selectedCount}
@@ -218,8 +220,8 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-97 transition-all shadow-md shadow-blue-500/25"
         >
           <Copy className="w-4 h-4" />
-          <span>Sao chép toàn bộ</span>
-          <span className="text-[10px] bg-white/25 px-1.5 py-0.5 rounded font-normal">
+          <span className="hidden md:inline short:hidden">Sao chép toàn bộ</span>
+          <span className="hidden md:inline short:hidden text-[10px] bg-white/25 px-1.5 py-0.5 rounded font-normal">
             PPT
           </span>
         </button>
@@ -249,6 +251,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             <span className="hidden sm:inline">Trợ lý AI</span>
           </button>
         )}
+      </div>
       </div>
     </header>
   );

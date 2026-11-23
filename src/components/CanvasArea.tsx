@@ -406,7 +406,19 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   };
 
   // Handle stage mouse down
-  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
+  // Trên điện thoại, sau mỗi lần chạm trình duyệt còn giả lập thêm sự kiện chuột → bỏ qua để không tạo 2 điểm
+  const lastTouchAtRef = useRef(0);
+  const isEmulatedMouse = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    const type = e.evt?.type || '';
+    if (type.startsWith('touch')) {
+      lastTouchAtRef.current = Date.now();
+      return false;
+    }
+    return type.startsWith('mouse') && Date.now() - lastTouchAtRef.current < 800;
+  };
+
+  const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (isEmulatedMouse(e)) return;
     const clickedOnEmpty = e.target === e.target.getStage() || e.target.hasName('grid-layer');
     const pos = getPointerPos(e);
 
@@ -582,7 +594,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   };
 
   // Handle mouse move
-  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent>) => {
+  const handleMouseMove = (e: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (isEmulatedMouse(e)) return;
     const pos = getPointerPos(e);
     setCurrentPointer(pos);
 
@@ -607,7 +620,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
   };
 
   // Handle mouse up
-  const handleMouseUp = () => {
+  const handleMouseUp = (e?: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+    if (e && isEmulatedMouse(e)) return;
     // Select objects within selection marquee box
     if (selectionBox && currentTool === 'select') {
       if (selectionBox.width > 5 || selectionBox.height > 5) {
@@ -1227,6 +1241,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       ref={containerRef}
       className="relative w-full h-full bg-slate-50/50 overflow-hidden cursor-crosshair select-none"
       style={{
+        // Chặn trình duyệt điện thoại cuộn/phóng to trang khi đang vẽ bằng ngón tay
+        touchAction: 'none',
         cursor: currentTool === 'select' ? 'default' : 'crosshair',
       }}
     >
@@ -1240,6 +1256,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onDblClick={handleDblClick}
+        // Cảm ứng (điện thoại, máy tính bảng): dùng chung xử lý với chuột
+        onTouchStart={handleMouseDown}
+        onTouchMove={handleMouseMove}
+        onTouchEnd={handleMouseUp}
+        onDblTap={handleDblClick}
       >
         {/* Layer 1: Coordinate Grid & Axes */}
         <GridLayer

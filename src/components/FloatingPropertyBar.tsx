@@ -53,7 +53,11 @@ export const FloatingPropertyBar: React.FC<FloatingPropertyBarProps> = ({
   if (!selectedElement) return null;
 
   // Position calculation: ensure it stays within screen boundaries
-  const stylePos: React.CSSProperties = position
+  // Điện thoại: thanh thuộc tính trải ngang phía trên chỗ vẽ, cuộn ngang được (không tràn màn hình)
+  const isCompact = window.innerWidth < 640;
+  const stylePos: React.CSSProperties = isCompact
+    ? { position: 'absolute', top: '8px', left: '8px', right: '8px' }
+    : position
     ? {
         position: 'absolute',
         left: `${Math.max(20, Math.min(window.innerWidth - 450, position.x))}px`,
@@ -77,7 +81,7 @@ export const FloatingPropertyBar: React.FC<FloatingPropertyBarProps> = ({
   return (
     <div
       style={stylePos}
-      className="z-30 bg-white/98 text-slate-800 rounded-2xl shadow-xl border border-slate-200/90 backdrop-blur-md px-3.5 py-2 flex items-center gap-3 animate-in fade-in zoom-in-95 duration-150 select-none"
+      className="z-30 bg-white/98 text-slate-800 rounded-2xl shadow-xl border border-slate-200/90 backdrop-blur-md px-3.5 py-2 flex items-center gap-3 max-sm:overflow-x-auto max-sm:no-scrollbar max-sm:*:shrink-0 animate-in fade-in zoom-in-95 duration-150 select-none"
     >
       {/* Element Type badge */}
       <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1 border-r border-slate-200 pr-2">

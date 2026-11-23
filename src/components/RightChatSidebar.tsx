@@ -175,6 +175,8 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
           timestamp: Date.now(),
         };
         setMessages((prev) => [...prev, assistantMsg]);
+        // Trên điện thoại / máy tính bảng khung chat che phần lớn chỗ vẽ → tự đóng để thấy ngay hình vừa vẽ
+        if ((window.innerWidth < 1024 || window.innerHeight < 500) && isOpen) onToggleOpen();
       } else {
         // CẢNH BÁO KHI SỐ LƯỢNG ĐỐI TƯỢNG VẼ ĐƯỢC BẰNG 0 HOẶC CÓ LỖI:
         // Hiển thị cảnh báo ngay trên khung chat kèm đoạn JSON thô mà AI trả về để không bao giờ im lặng mà không vẽ!
@@ -280,7 +282,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
         <button
           onClick={onToggleOpen}
           title="Mở Trợ lý Vẽ Hình Tiếng Việt / AI"
-          className="fixed right-4 bottom-18 z-30 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-full shadow-lg shadow-blue-500/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 text-xs font-bold"
+          className="fixed right-4 bottom-6 md:bottom-28 short:bottom-4 z-30 bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-3 rounded-full shadow-lg shadow-blue-500/30 hover:scale-105 active:scale-95 transition-all flex items-center gap-2 text-xs font-bold"
         >
           <Sparkles className="w-5 h-5 animate-pulse" />
           <span className="hidden sm:inline">Vẽ bằng Tiếng Việt / AI</span>
@@ -289,9 +291,9 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
 
       {/* Main Sidebar */}
       <aside
-        className={`fixed top-16 right-0 bottom-0 z-30 bg-white/98 backdrop-blur-md border-l border-slate-200 shadow-xl transition-all duration-300 flex flex-col select-none ${
+        className={`fixed top-16 short:top-12 right-0 bottom-0 z-30 bg-white/98 backdrop-blur-md border-l border-slate-200 shadow-xl transition-all duration-300 flex flex-col select-none ${
           isOpen
-            ? "w-96 sm:w-104 translate-x-0"
+            ? "w-full sm:w-96 md:w-104 translate-x-0"
             : "w-0 translate-x-full overflow-hidden"
         }`}
       >

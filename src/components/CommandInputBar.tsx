@@ -61,7 +61,7 @@ export const CommandInputBar: React.FC<CommandInputBarProps> = ({
   };
 
   return (
-    <div className="bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 z-20 shadow-md">
+    <div className="hidden md:block short:hidden bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-2 z-20 shadow-md">
       <div className="max-w-6xl mx-auto flex flex-col gap-1.5">
         {/* Input line and buttons */}
         <form onSubmit={handleSubmit} className="flex items-center gap-2">

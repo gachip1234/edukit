@@ -67,7 +67,8 @@ export const App: React.FC = () => {
     useState<LatexElement | null>(null);
   const [presetsOpen, setPresetsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
-  const [isChatOpen, setIsChatOpen] = useState(true);
+  // Trên điện thoại / máy tính bảng khung chat che phần lớn chỗ vẽ → mặc định đóng, mở bằng nút ✦ "Trợ lý AI"
+  const [isChatOpen, setIsChatOpen] = useState(() => window.innerWidth >= 1024 && window.innerHeight >= 500);
   const [labelSettingsOpen, setLabelSettingsOpen] = useState(false);
 
   // Global Point Label Style
@@ -803,7 +804,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col w-screen h-screen overflow-hidden bg-slate-100 font-sans">
+    <div className="flex flex-col w-screen h-screen h-dvh overflow-hidden bg-slate-100 font-sans">
       {/* Top Header Bar */}
       <HeaderBar
         showGrid={showGrid}
@@ -933,7 +934,7 @@ export const App: React.FC = () => {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-16 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-20 md:bottom-16 left-3 right-3 md:left-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
           {toast.type === "success" && (
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
           )}
