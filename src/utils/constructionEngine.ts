@@ -241,6 +241,131 @@ export interface ConstructionResult {
  * Executes step-by-step construction commands or structured geometry objects
  * using exact analytical geometry and auto-fits & centers the resulting figures on the canvas.
  */
+/** Tách danh sách tên điểm từ mảng hoặc chuỗi ("BC", "B,C", "B C" → ["B","C"]). */
+function toNameList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  const str = value.trim();
+  if (!str) return [];
+  if (/[,\s]/.test(str)) return str.split(/[,\s]+/).filter(Boolean);
+  // "BC" (2 chữ in hoa liền nhau) → ["B", "C"]; "A1" hoặc "M" giữ nguyên
+  if (/^[A-Z]{2,}$/.test(str)) return str.split('');
+  return [str];
+}
+
+/**
+ * Tìm các điểm được nhắc tới (trong segments, polygons, commands) nhưng chưa có tọa độ
+ * và cũng không được lệnh dựng hình nào tạo ra, rồi đặt chúng thành một đa giác lồi
+ * có hình dạng tổng quát. Trả về danh sách tên điểm đã tự đặt.
+ */
+function autoPlaceMissingBasePoints(
+  rawInput: any,
+  commands: ConstructionCommand[],
+  points: Map<string, MathPoint>,
+): string[] {
+  // Điểm do lệnh dựng hình tạo ra → không tự đặt
+  const derived = new Set<string>();
+  for (const c of commands) {
+    switch (c.cmd) {
+      case 'POINT':
+      case 'MIDPOINT':
+      case 'INTERSECT':
+        if (c.name) derived.add(String(c.name).trim());
+        break;
+      case 'PERPENDICULAR':
+        derived.add(String(c.foot || 'H').trim());
+        break;
+      case 'TANGENTS':
+      case 'TRIANGLE':
+        toNameList(c.names).forEach((n) => derived.add(n));
+        if (c.cmd === 'TRIANGLE' && !c.names) ['A', 'B', 'C'].forEach((n) => derived.add(n));
+        if (c.cmd === 'TANGENTS' && c.from) derived.add(String(c.from).trim()); // TANGENTS tự đặt điểm ngoài
+        break;
+      case 'DIAMETER':
+        derived.add(String(c.otherEnd || 'C').trim());
+        break;
+    }
+  }
+
+  // Các điểm được nhắc tới, giữ thứ tự xuất hiện
+  const referenced: string[] = [];
+  const add = (names: string[]) => {
+    for (const n of names) if (n && !referenced.includes(n)) referenced.push(n);
+  };
+  if (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput)) {
+    for (const poly of Array.isArray(rawInput.polygons) ? rawInput.polygons : []) {
+      add(toNameList(poly?.vertices || poly?.names));
+    }
+    for (const seg of Array.isArray(rawInput.segments) ? rawInput.segments : []) {
+      add(toNameList(seg?.from || seg?.p1 || seg?.start));
+      add(toNameList(seg?.to || seg?.p2 || seg?.end));
+    }
+  }
+  for (const c of commands) {
+    switch (c.cmd) {
+      case 'MIDPOINT':
+        add(toNameList(c.of));
+        break;
+      case 'PERPENDICULAR':
+        add(toNameList(c.from));
+        add(toNameList(c.to));
+        break;
+      case 'INTERSECT':
+        add(toNameList(c.obj1));
+        add(toNameList(c.obj2));
+        break;
+      case 'SEGMENT':
+        add(toNameList(c.from));
+        add(toNameList(c.to));
+        break;
+      case 'POLYGON':
+        add(toNameList(c.names));
+        break;
+      case 'DIAMETER':
+        add(toNameList(c.through));
+        break;
+    }
+  }
+
+  const missing = referenced.filter((n) => !points.has(n) && !derived.has(n));
+  if (missing.length === 0) return [];
+
+  // Tâm và bán kính đặt điểm: quanh các điểm đã có (nếu có), nếu không thì quanh gốc tọa độ
+  let cx = 0;
+  let cy = 0;
+  let radius = 3;
+  if (points.size > 0) {
+    const all = Array.from(points.values());
+    cx = all.reduce((sum, pt) => sum + pt.x, 0) / all.length;
+    cy = all.reduce((sum, pt) => sum + pt.y, 0) / all.length;
+    const spread = Math.max(...all.map((pt) => Math.hypot(pt.x - cx, pt.y - cy)));
+    radius = Math.max(3, spread);
+  }
+
+  const n = missing.length;
+  missing.forEach((name, i) => {
+    let x: number;
+    let y: number;
+    if (n === 3 && points.size === 0) {
+      // Tam giác nhọn không cân, đỉnh thứ nhất ở trên (dáng quen thuộc trong sách giáo khoa)
+      const triangle: [number, number][] = [
+        [-0.8, 3],
+        [-3, -1.8],
+        [3.4, -1.8],
+      ];
+      [x, y] = triangle[i];
+    } else {
+      // Đa giác lồi, lệch nhẹ góc/bán kính để không thành hình đặc biệt (đều, vuông...)
+      const angle = Math.PI / 2 + (i * 2 * Math.PI) / n + (i % 2 === 0 ? 0.12 : -0.08);
+      const r = radius * (i % 2 === 0 ? 1 : 0.9);
+      x = cx + r * Math.cos(angle);
+      y = cy + r * Math.sin(angle);
+    }
+    points.set(name, { name, x: Math.round(x * 1000) / 1000, y: Math.round(y * 1000) / 1000, label: name });
+  });
+  return missing;
+}
+
 export function executeConstructionCommands(
   rawInput: any,
   canvasWidth: number,
@@ -375,6 +500,16 @@ export function executeConstructionCommands(
       ? rawInput.commands
       : [];
   const commands = normalizeConstructionCommands(rawCommands);
+
+  // 2b. TỰ ĐẶT VỊ TRÍ CÁC ĐIỂM GỐC MÀ AI QUÊN CHO TỌA ĐỘ
+  // AI đôi khi chỉ trả về segments/polygons/commands (vd: đoạn AB, BC, CA + đường cao AH)
+  // mà không có "points". Khi đó các điểm gốc (A, B, C) được tự đặt ở vị trí tổng quát,
+  // còn các điểm suy ra (chân đường cao, trung điểm, giao điểm, tiếp điểm...) vẫn do
+  // các lệnh dựng hình tính chính xác.
+  const autoPlaced = autoPlaceMissingBasePoints(rawInput, commands, points);
+  if (autoPlaced.length > 0) {
+    executedLog.push(`Tự đặt vị trí điểm gốc ${autoPlaced.join(', ')} (AI không cho tọa độ)`);
+  }
 
   // Helper to get or fallback to point
   const getPt = (name: string): MathPoint | undefined => points.get(name);
@@ -576,7 +711,7 @@ export function executeConstructionCommands(
 
       case 'MIDPOINT': {
         // {"cmd": "MIDPOINT", "of": ["A", "B"], "name": "I"}
-        const [pA, pB] = cmd.of || [];
+        const [pA, pB] = toNameList(cmd.of);
         const name = (cmd.name || 'I').trim();
         const ptA = getPt(pA);
         const ptB = getPt(pB);
@@ -593,11 +728,7 @@ export function executeConstructionCommands(
       case 'PERPENDICULAR': {
         // {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "H"}
         const from = (cmd.from || '').trim();
-        const toList = Array.isArray(cmd.to)
-          ? cmd.to
-          : typeof cmd.to === 'string'
-          ? cmd.to.split(/[,\s]+/).filter(Boolean)
-          : [];
+        const toList = toNameList(cmd.to);
         const [pB, pC] = toList;
         const foot = (cmd.foot || 'H').trim();
 
@@ -630,8 +761,8 @@ export function executeConstructionCommands(
 
       case 'INTERSECT': {
         // {"cmd": "INTERSECT", "obj1": ["A", "B"], "obj2": ["C", "D"], "name": "E"}
-        const [pA, pB] = cmd.obj1 || [];
-        const [pC, pD] = cmd.obj2 || [];
+        const [pA, pB] = toNameList(cmd.obj1);
+        const [pC, pD] = toNameList(cmd.obj2);
         const name = (cmd.name || 'E').trim();
 
         const ptA = getPt(pA);
