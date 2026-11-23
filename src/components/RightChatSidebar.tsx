@@ -182,7 +182,12 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
           ? JSON.stringify(res.rawJson, null, 2)
           : res.rawText || "Không có dữ liệu JSON phản hồi từ AI";
 
-        const warningMsg = `⚠️ Cảnh báo: AI đã phản hồi nhưng số lượng đối tượng hình học vẽ được là 0 (Không tìm thấy điểm, đoạn thẳng hoặc đường tròn hợp lệ để vẽ lên Canvas).\n\n${res.message ? `• Chi tiết: ${res.message}\n\n` : ""}📄 Dữ liệu JSON thô nhận từ AI:\n\`\`\`json\n${rawJsonStr}\n\`\`\``;
+        // Chỉ nói "AI đã phản hồi" và in JSON thô khi AI thật sự trả về dữ liệu;
+        // các lỗi khác (thiếu API Key, lỗi mạng, hết hạn mức...) chỉ hiện thông báo lỗi rõ ràng.
+        const hasAiData = Boolean(res.rawJson || res.rawText);
+        const warningMsg = hasAiData
+          ? `⚠️ Cảnh báo: AI đã phản hồi nhưng số lượng đối tượng hình học vẽ được là 0 (Không tìm thấy điểm, đoạn thẳng hoặc đường tròn hợp lệ để vẽ lên Canvas).\n\n${res.message ? `• Chi tiết: ${res.message}\n\n` : ""}📄 Dữ liệu JSON thô nhận từ AI:\n\`\`\`json\n${rawJsonStr}\n\`\`\``
+          : `⚠️ ${res.message || "Không vẽ được hình từ yêu cầu này."}`;
 
         const assistantMsg: ChatMessage = {
           id: `asst-${Date.now()}`,
