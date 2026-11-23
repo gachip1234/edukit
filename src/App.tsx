@@ -599,6 +599,20 @@ export const App: React.FC = () => {
           if (!showAxes) setShowAxes(true);
           return { success: true, message: regexRes.message, elementCount: newCount };
         }
+
+        // Lệnh ngắn về hình đặc biệt (hình thang, hình thoi...) → thử Bộ giải Sư phạm trước khi gọi AI
+        const quickClassic = solveClassicGeometry(prompt, elements, width, height);
+        if (quickClassic && quickClassic.success) {
+          const newCount = quickClassic.newElements?.length || quickClassic.updatedElements?.length || 0;
+          if (quickClassic.newElements) {
+            updateElementsWithHistory(quickClassic.newElements);
+          } else if (quickClassic.updatedElements) {
+            updateElementsWithHistory(quickClassic.updatedElements);
+          }
+          showToast(quickClassic.message, "success");
+          if (!showAxes) setShowAxes(true);
+          return { success: true, message: quickClassic.message, elementCount: newCount };
+        }
       }
 
       // 1. NẾU CHỌN CHẾ ĐỘ THUẦN JS (OFFLINE):

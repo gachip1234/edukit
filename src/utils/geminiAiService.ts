@@ -363,6 +363,17 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
       const errData = await response.json().catch(() => ({}));
       const rawMsg = errData?.error?.message || `HTTP ${response.status}: ${response.statusText}`;
       console.warn(`[Gemini API] Lỗi từ Google (${curModel}):`, rawMsg);
+      if (/credits? (are|is) depleted|prepay|billing/i.test(rawMsg)) {
+        return {
+          success: false,
+          explanation: '',
+          commands: [],
+          error:
+            'Tài khoản Google AI Studio của API Key này đã hết tiền trả trước (prepayment credits), nên Google từ chối yêu cầu. ' +
+            'Vào https://aistudio.google.com → Billing để nạp thêm hoặc kiểm tra gói, hoặc dùng API Key của dự án khác. ' +
+            'Các lệnh vẽ đơn giản (tam giác, tứ giác, hình vuông, đường tròn...) vẫn vẽ được mà không cần AI.',
+        };
+      }
       return {
         success: false,
         explanation: '',

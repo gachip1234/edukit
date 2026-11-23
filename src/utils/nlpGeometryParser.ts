@@ -873,6 +873,62 @@ export function parseVietnameseGeometry(
     };
   }
 
+  // -------------------------------------------------------------
+  // 12. TỨ GIÁC THƯỜNG (Quadrilateral)
+  // "Vẽ tứ giác ABCD", "vẽ tứ giác MNPQ", "vẽ tứ giác" (mặc định ABCD)
+  // (Tứ giác đều đã được xử lý ở mục 2)
+  // -------------------------------------------------------------
+  const quadMatch = norm.match(/(?:tứ giác|tu giac)(?:\s+([a-z])([a-z])([a-z])([a-z]))?(?![a-z])/);
+  if (quadMatch && !/(?:tứ giác|tu giac)\s+(?:đều|deu)/.test(norm)) {
+    const names = quadMatch[1]
+      ? [quadMatch[1], quadMatch[2], quadMatch[3], quadMatch[4]].map((c) => c.toUpperCase())
+      : ['A', 'B', 'C', 'D'];
+
+    // Tứ giác lồi không đặc biệt (không song song, không bằng nhau) để nhìn rõ là tứ giác thường
+    const coords: [number, number][] = [
+      [-3, 2],
+      [-3.8, -2],
+      [3.2, -2],
+      [2, 2.6],
+    ];
+    const screenPts = coords.map(([x, y]) => mathToScreen(x, y, origin));
+    const gidQuad = `quad-group-${now}`;
+
+    const newElements: GeoElement[] = [
+      {
+        id: `poly-${now}`,
+        type: 'polygon',
+        groupId: gidQuad,
+        points: screenPts.flatMap((pt) => [pt.x, pt.y]),
+        stroke: '#2563eb',
+        strokeWidth: 2,
+        strokeStyle: 'solid',
+        fill: 'rgba(59, 130, 246, 0.16)',
+        closed: true,
+      },
+      ...screenPts.map(
+        (pt, i): GeoElement => ({
+          id: `pt-${names[i]}-${now}`,
+          type: 'point',
+          groupId: gidQuad,
+          x: pt.x,
+          y: pt.y,
+          radius: 4.5,
+          label: names[i],
+          stroke: '#0f172a',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+        }),
+      ),
+    ];
+
+    return {
+      success: true,
+      message: `Đã vẽ tứ giác ${names.join('')}!`,
+      newElements: [...existingElements, ...newElements],
+    };
+  }
+
   return {
     success: false,
     message: 'Hình học này phức tạp hoặc nằm ngoài mẫu cơ bản, cần chuyển tiếp sang Gemini AI để phân tích.',
