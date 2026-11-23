@@ -166,7 +166,30 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
    - {"cmd": "INTERSECT", "obj1": ["A", "B"], "obj2": ["C", "D"], "name": "E"} (Giao điểm E của AB và CD)
    - {"cmd": "TRIANGLE", "names": ["A", "B", "C"], "type": "right_at_A", "ab": 3, "ac": 4} (Tam giác vuông tại A)
 
-BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, O, ...).
+QUY TẮC BẮT BUỘC:
+- Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, O, ...).
+- MỌI điểm gốc xuất hiện trong "segments", "polygons" hoặc "commands" PHẢI có trong "points" kèm tọa độ x, y cụ thể.
+  Chỉ được bỏ qua các điểm do "commands" tự tính ra (chân đường cao "foot", trung điểm, giao điểm, tiếp điểm, đầu kia đường kính).
+- Chọn tọa độ đúng với giả thiết đề bài (vuông tại A, cân tại A, độ dài cạnh, điểm nằm trên đường tròn...) và có dáng tổng quát, dễ nhìn.
+- Điểm nằm trên đường tròn tâm O bán kính R phải có khoảng cách tới O đúng bằng R.
+- Ưu tiên dùng "commands" (PERPENDICULAR, MIDPOINT, INTERSECT, TANGENTS...) cho các điểm suy ra để vẽ chính xác tuyệt đối.
+
+VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. Gọi M là trung điểm BC."
+{
+  "reasoning": "Đặt B, C trên trục hoành, A phía trên để tam giác nhọn. H là chân đường cao từ A xuống BC, M là trung điểm BC.",
+  "points": [
+    {"name": "A", "x": 1, "y": 4},
+    {"name": "B", "x": -3, "y": 0},
+    {"name": "C", "x": 4, "y": 0}
+  ],
+  "commands": [
+    {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "H"},
+    {"cmd": "MIDPOINT", "of": ["B", "C"], "name": "M"}
+  ],
+  "polygons": [{"vertices": ["A", "B", "C"]}],
+  "segments": [{"from": "A", "to": "M", "dashed": true}],
+  "explanation": "Tam giác ABC nhọn với đường cao AH và trung điểm M của BC."
+}
 `;
 
   let lastActualError = '';
@@ -187,13 +210,16 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
   }
 
   try {
-    // 2. TỐI ƯU TỐC ĐỘ PHẢN HỒI DƯỚI 5S: thinkingBudget = 512, temperature = 0.1
+    // 2. Cấu hình theo tài liệu Gemini 3.x: dùng thinkingLevel thay cho thinkingBudget,
+    //    không gửi temperature/topP/topK (đã bị loại bỏ ở Gemini 3.8).
+    //    maxOutputTokens đủ lớn vì token suy nghĩ cũng tính vào giới hạn đầu ra.
     const generationConfig: any = {
-      temperature: 0.1,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       responseMimeType: 'application/json',
       responseSchema: {
         type: 'OBJECT',
+        // Cho AI suy luận trước, rồi khai báo điểm, sau đó mới tới các đối tượng dùng điểm
+        propertyOrdering: ['reasoning', 'points', 'circles', 'commands', 'segments', 'polygons', 'explanation'],
         properties: {
           explanation: {
             type: 'STRING',
@@ -205,7 +231,8 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
           },
           points: {
             type: 'ARRAY',
-            description: 'Danh sách các điểm toán học với tọa độ Oxy',
+            description:
+              'BẮT BUỘC: tọa độ Oxy của MỌI điểm gốc dùng trong segments/polygons/commands (chỉ trừ điểm do commands tự tính: chân đường cao, trung điểm, giao điểm, tiếp điểm)',
             items: {
               type: 'OBJECT',
               properties: {
@@ -289,12 +316,12 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
             },
           },
         },
-        required: ['explanation'],
+        required: ['reasoning', 'points', 'explanation'],
       },
     };
 
     if (useThinking) {
-      generationConfig.thinkingConfig = { thinkingBudget: 512 };
+      generationConfig.thinkingConfig = { thinkingLevel: 'low' };
     }
 
     const sendRequest = (m: string) => fetch(endpointFor(m), {
@@ -321,6 +348,15 @@ BẮT BUỘC: Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, 
     });
 
     let response = await sendRequest(curModel);
+    // Model không nhận tham số suy nghĩ (400 INVALID_ARGUMENT) → gửi lại không kèm thinkingConfig
+    if (response.status === 400 && generationConfig.thinkingConfig) {
+      const errText = await response.clone().text().catch(() => '');
+      if (/thinking/i.test(errText)) {
+        console.warn(`[Gemini API] ${curModel} không nhận thinkingConfig, gửi lại không kèm tham số này.`);
+        delete generationConfig.thinkingConfig;
+        response = await sendRequest(curModel);
+      }
+    }
     // Model không tồn tại (404) → thử model dự phòng tiếp theo
     for (let i = 1; response.status === 404 && i < modelQueue.length; i++) {
       console.warn(`[Gemini API] Model ${curModel} không khả dụng (404), thử ${modelQueue[i]}...`);
