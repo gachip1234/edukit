@@ -10,7 +10,7 @@ export interface ExportResult {
 }
 
 /**
- * Exports Konva Stage to Word-friendly PNG (white background, capped size) and writes directly to clipboard
+ * Exports Konva Stage to transparent PNG (capped size) and writes directly to clipboard
  */
 export async function copyStageToClipboard(
   stage: Konva.Stage,
@@ -71,9 +71,7 @@ export async function copyStageToClipboard(
 
     stage.batchDraw();
 
-    // Word (Windows) chokes on very large clipboard bitmaps and renders the
-    // alpha channel of Chrome's clipboard PNG as a black/garbled background.
-    // So: cap the pixel size and flatten onto an opaque white background.
+    // Word (Windows) chokes on very large clipboard bitmaps, so cap the size.
     const MAX_SIDE = 2400;
     const MAX_PIXELS = 4_000_000;
     let pixelRatio = 2;
@@ -99,14 +97,7 @@ export async function copyStageToClipboard(
       stage.batchDraw();
     }
 
-    const out = document.createElement('canvas');
-    out.width = rawCanvas.width;
-    out.height = rawCanvas.height;
-    const ctx = out.getContext('2d');
-    if (!ctx) throw new Error('Không tạo được canvas');
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, out.width, out.height);
-    ctx.drawImage(rawCanvas, 0, 0);
+    const out = rawCanvas; // keep transparent background
 
     const dataUrl = out.toDataURL('image/png');
     const blobPromise = new Promise<Blob>((resolve, reject) => {
@@ -115,8 +106,8 @@ export async function copyStageToClipboard(
 
     const filename = `hinh-hoc-${Date.now()}.png`;
     const okMessage = mode === 'selection'
-      ? 'Đã sao chép vùng chọn (PNG nền trắng) — mở Word và nhấn Ctrl+V để dán.'
-      : 'Đã sao chép hình vẽ (PNG nền trắng) — mở Word và nhấn Ctrl+V để dán.';
+      ? 'Đã sao chép vùng chọn (PNG trong suốt) — mở Word và nhấn Ctrl+V để dán.'
+      : 'Đã sao chép hình vẽ (PNG trong suốt) — mở Word và nhấn Ctrl+V để dán.';
 
     if (!writeClipboard) {
       return { success: true, message: 'Đã tạo ảnh PNG', blob: await blobPromise, dataUrl };

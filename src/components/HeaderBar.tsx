@@ -254,7 +254,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         <button
           onClick={onCopyAll}
           disabled={isExporting}
-          title="Sao chép toàn bộ hình vẽ thành ảnh PNG nền trắng để dán trực tiếp (Ctrl+V) vào Word, PowerPoint"
+          title="Sao chép toàn bộ hình vẽ thành ảnh PNG nền trong suốt để dán trực tiếp (Ctrl+V) vào Word, PowerPoint"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-97 transition-all shadow-md shadow-blue-500/25"
         >
           <Copy className="w-4 h-4" />
