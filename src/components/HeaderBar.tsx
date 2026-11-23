@@ -11,7 +11,6 @@ import {
   Sparkles,
   Sun,
   Moon,
-  MonitorSmartphone,
   Type,
   Save,
   FolderOpen,
@@ -41,6 +40,8 @@ interface HeaderBarProps {
   /** Chế độ giao diện hiện tại và hàm chuyển Sáng → Tối → Tự động */
   themePreference?: 'light' | 'dark' | 'system';
   onCycleTheme?: () => void;
+  /** Giao diện đang hiển thị tối hay sáng (kể cả khi ở chế độ Tự động) */
+  themeIsDark?: boolean;
 }
 
 export const HeaderBar: React.FC<HeaderBarProps> = ({
@@ -66,6 +67,7 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onToggleChat,
   themePreference = 'system',
   onCycleTheme,
+  themeIsDark = false,
 }) => {
   return (
     <header className="h-16 short:h-12 bg-white/75 backdrop-blur-xl backdrop-saturate-150 border-b border-slate-200/80 px-2 md:px-4 flex items-center justify-between gap-2 min-[1700px]:gap-1 z-20 shadow-xs select-none">
@@ -85,6 +87,34 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             Vẽ hình học & Xuất ảnh PNG trong suốt cho PowerPoint
           </p>
         </div>
+          {/* Chế độ giao diện: Sáng → Tối → Tự động — đặt cạnh logo để luôn nhìn thấy (kể cả trên điện thoại) */}
+          {onCycleTheme && (
+            <button
+              onClick={onCycleTheme}
+              title={
+                themePreference === 'light'
+                  ? 'Giao diện: Sáng (bấm để chuyển sang Tối)'
+                  : themePreference === 'dark'
+                    ? 'Giao diện: Tối (bấm để chuyển sang Tự động theo hệ thống)'
+                    : 'Giao diện: Tự động theo hệ thống (bấm để chuyển sang Sáng)'
+              }
+              aria-label="Đổi chế độ giao diện sáng / tối"
+              className="relative shrink-0 flex items-center justify-center w-9 h-9 rounded-xl text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
+            >
+              {/* Mặt trời = đang sáng, mặt trăng = đang tối; chữ "A" nhỏ = Tự động theo hệ thống */}
+              {themeIsDark ? (
+                <Moon className="w-[18px] h-[18px] text-indigo-400" />
+              ) : (
+                <Sun className="w-[18px] h-[18px] text-amber-500" />
+              )}
+              {themePreference === 'system' && (
+                <span className="absolute -bottom-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-slate-600 text-[8px] leading-3.5 font-bold text-white text-center">
+                  A
+                </span>
+              )}
+            </button>
+          )}
+
       </div>
 
       {/* Các nhóm nút: trên màn hình nhỏ gom thành một dải cuộn ngang; từ 2xl (1536px) trở lên (min-[1700px]:contents) giữ bố cục cũ */}
@@ -243,29 +273,6 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
         >
           <Download className="w-4 h-4" />
         </button>
-
-        {/* Chế độ giao diện: Sáng → Tối → Tự động (theo hệ thống) */}
-        {onCycleTheme && (
-          <button
-            onClick={onCycleTheme}
-            title={
-              themePreference === 'light'
-                ? 'Giao diện: Sáng (bấm để chuyển sang Tối)'
-                : themePreference === 'dark'
-                  ? 'Giao diện: Tối (bấm để chuyển sang Tự động theo hệ thống)'
-                  : 'Giao diện: Tự động theo hệ thống (bấm để chuyển sang Sáng)'
-            }
-            aria-label="Đổi chế độ giao diện sáng / tối"
-            className="flex items-center gap-1.5 px-2.5 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
-          >
-            {themePreference === 'light' && <Sun className="w-4 h-4 text-amber-500" />}
-            {themePreference === 'dark' && <Moon className="w-4 h-4 text-indigo-400" />}
-            {themePreference === 'system' && <MonitorSmartphone className="w-4 h-4 text-slate-500" />}
-            <span className="hidden min-[1700px]:inline short:hidden">
-              {themePreference === 'light' ? 'Sáng' : themePreference === 'dark' ? 'Tối' : 'Tự động'}
-            </span>
-          </button>
-        )}
 
         {/* Toggle Chat AI Sidebar Button */}
         {onToggleChat && (

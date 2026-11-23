@@ -39,7 +39,7 @@ import { CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 export const App: React.FC = () => {
   // Giao diện Sáng / Tối / Tự động
-  const { preference: themePreference, cycleTheme } = useTheme();
+  const { preference: themePreference, isDark: themeIsDark, cycleTheme } = useTheme();
 
   // Elements & History state
   // Mỗi lần mở/tải lại trang, canvas luôn bắt đầu trống
@@ -854,6 +854,7 @@ export const App: React.FC = () => {
         isChatOpen={isChatOpen}
         onToggleChat={() => setIsChatOpen(!isChatOpen)}
         themePreference={themePreference}
+        themeIsDark={themeIsDark}
         onCycleTheme={cycleTheme}
         onOpenLabelSettings={() => setLabelSettingsOpen(true)}
       />
