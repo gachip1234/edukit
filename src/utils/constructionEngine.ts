@@ -127,10 +127,10 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 2a. RAY(O, A, x) / LINE(A, B, d) / LINE(A, B, x, y) / RAY_ANGLE(O, 60, x) / LINE_ANGLE(A, 30, d)
-      const lineFamily = trimmed.match(/^(RAY_ANGLE|LINE_ANGLE|RAY|LINE|Tia|DuongThang)\s*\(([^)]*)\)/i);
+      const lineFamily = trimmed.match(/^(RAY_OPPOSITE|RAY_ANGLE|LINE_ANGLE|RAY|LINE|TiaDoi|Tia|DuongThang)\s*\(([^)]*)\)/i);
       if (lineFamily) {
         const kind = lineFamily[1].toUpperCase();
-        const cmdName = kind === 'TIA' ? 'RAY' : kind === 'DUONGTHANG' ? 'LINE' : kind;
+        const cmdName = kind === 'TIA' ? 'RAY' : kind === 'DUONGTHANG' ? 'LINE' : kind === 'TIADOI' ? 'RAY_OPPOSITE' : kind;
         const args = lineFamily[2].split(',').map((a) => a.trim()).filter(Boolean);
         result.push({ cmd: cmdName, args });
         continue;
@@ -315,6 +315,11 @@ function autoPlaceMissingBasePoints(
       case 'DIAMETER':
         derived.add(String(c.otherEnd || 'C').trim());
         break;
+      case 'RAY_OPPOSITE': {
+        const third = oppositeArgs(c)[2];
+        if (third && /^[A-Z]/.test(third)) derived.add(third);
+        break;
+      }
     }
   }
 
@@ -364,6 +369,9 @@ function autoPlaceMissingBasePoints(
       case 'LINE_ANGLE':
         add((Array.isArray(c.args) ? c.args.slice(0, 1) : [c.from]).filter(Boolean).map(String));
         break;
+      case 'RAY_OPPOSITE':
+        add(oppositeArgs(c).slice(0, 2).filter(Boolean));
+        break;
     }
   }
 
@@ -406,6 +414,12 @@ function autoPlaceMissingBasePoints(
   return missing;
 }
 
+/** Tham số của lệnh tia đối: [gốc, điểm thuộc tia ban đầu, nhãn (chữ thường) hoặc tên điểm mới (chữ hoa)] */
+function oppositeArgs(c: ConstructionCommand): string[] {
+  const a = Array.isArray(c.args) ? c.args : [c.from, c.of ?? c.away ?? toNameList(c.to)[0], c.label ?? c.name];
+  return a.map((v: unknown) => (v == null ? '' : String(v).trim()));
+}
+
 /** Điểm đầu vào / đầu ra của một lệnh dựng hình (dùng để sắp xếp thứ tự chạy) */
 function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[] } {
   const one = (v: unknown) => (v ? [String(v).trim()] : []);
@@ -421,6 +435,10 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
     case 'RAY':
     case 'LINE':
       return { inputs: Array.isArray(c.args) ? c.args.slice(0, 2) : [...one(c.from), ...one(c.through)], outputs: [] };
+    case 'RAY_OPPOSITE': {
+      const [from, away, third] = oppositeArgs(c);
+      return { inputs: [from, away].filter(Boolean), outputs: third && /^[A-Z]/.test(third) ? [third] : [] };
+    }
     case 'RAY_ANGLE':
     case 'LINE_ANGLE':
       return { inputs: Array.isArray(c.args) ? c.args.slice(0, 1) : one(c.from), outputs: [] };
@@ -966,6 +984,32 @@ export function executeConstructionCommands(
             dashed: Boolean(cmd.dashed),
           });
           executedLog.push(`${isRay ? 'Tia' : 'Đường thẳng'} ${isRay ? from + (l1 || through) : l1 && l2 ? l1 + l2 : l1 || from + through}`);
+        }
+        break;
+      }
+
+      case 'RAY_OPPOSITE': {
+        // RAY_OPPOSITE(B, C, x): tia Bx là tia đối của tia BC (gốc B, hướng ngược với C), nhãn x
+        // RAY_OPPOSITE(B, C, D): tia BD là tia đối của tia BC; D là điểm mới trên tia đối (nếu chưa có)
+        const [from, away, third] = oppositeArgs(cmd);
+        const o = getPt(from);
+        const a = getPt(away);
+        if (o && a && from !== away) {
+          const dx = o.x - a.x;
+          const dy = o.y - a.y;
+          let through: string;
+          let endLabel: string | undefined;
+          if (third && /^[A-Z]/.test(third)) {
+            if (!getPt(third)) {
+              points.set(third, { name: third, x: Math.round((o.x + dx * 0.6) * 1000) / 1000, y: Math.round((o.y + dy * 0.6) * 1000) / 1000 });
+            }
+            through = third;
+          } else {
+            through = addHelper(o.x + dx, o.y + dy);
+            endLabel = third || undefined;
+          }
+          lineObjs.push({ from, through, isRay: true, endLabel, dashed: Boolean(cmd.dashed) });
+          executedLog.push(`Tia ${from}${third || ''} là tia đối của tia ${from}${away}`);
         }
         break;
       }
