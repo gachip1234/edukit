@@ -127,6 +127,15 @@ function createRegularPolygon(
 export function isSimpleSingleObjectCommand(rawPrompt: string): boolean {
   const prompt = rawPrompt.trim();
 
+  // 0. Đề tia đối ngắn (chỉ có đoạn/tia, không có hình khác) → bộ giải không cần AI xử lý được trọn vẹn
+  if (
+    /tia đối|đối (?:của|với) tia/i.test(prompt) &&
+    prompt.length < 140 &&
+    !/đường tròn|tam giác|tứ giác|hình |góc|trung điểm|vuông góc|song song/i.test(prompt)
+  ) {
+    return true;
+  }
+
   // 1. Giới hạn độ dài: Chỉ cho phép các câu lệnh ngắn (dưới 60 ký tự)
   if (prompt.length >= 60) {
     return false;
@@ -229,6 +238,69 @@ export function parseVietnameseGeometry(
   const norm = normalizeText(prompt);
   const origin = getCanvasOrigin(canvasWidth, canvasHeight);
   const now = Date.now();
+
+  // -------------------------------------------------------------
+  // 0. TIA ĐỐI: "(cho đoạn thẳng BC,) vẽ tia Bx là tia đối của tia BC", "tia đối của tia BC là tia Bx",
+  //    "vẽ tia đối Bx của tia BC", "tia BD là tia đối của tia BC" (D chữ hoa = điểm mới trên tia đối)
+  //    Xử lý TRƯỚC các mục khác để "đoạn thẳng BC" / "tia Bx" không bị hiểu nhầm.
+  // -------------------------------------------------------------
+  if (/tia đối|đối (?:của|với) tia/i.test(prompt)) {
+    const NAME = "[A-Z]'?";
+    const RAYNAME = `(?:[a-z]|${NAME})`;
+    const patterns: [RegExp, (m: RegExpMatchArray) => [string, string, string]][] = [
+      [new RegExp(`tia\\s+(${NAME})(${RAYNAME})\\s+(?:là\\s+)?(?:tia\\s+)?đối\\s+(?:của|với)\\s+tia\\s+(${NAME})(${NAME})`), (m) => [m[3], m[4], m[2]]],
+      [new RegExp(`tia đối của tia\\s+(${NAME})(${NAME})\\s+là\\s+tia\\s+(${NAME})(${RAYNAME})`), (m) => [m[1], m[2], m[4]]],
+      [new RegExp(`tia đối\\s+(${NAME})(${RAYNAME})\\s+của\\s+tia\\s+(${NAME})(${NAME})`), (m) => [m[3], m[4], m[2]]],
+    ];
+    for (const [re, pick] of patterns) {
+      const m = prompt.match(re);
+      if (!m) continue;
+      const [oName, aName, label] = pick(m);
+      const findPt = (l: string) =>
+        existingElements.find((el) => el.type === 'point' && (el as PointElement).label === l) as PointElement | undefined;
+      const mkPt = (l: string, mx: number, my: number): PointElement => {
+        const sp = mathToScreen(mx, my, origin);
+        return { id: `pt-${l}-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'point', x: sp.x, y: sp.y, radius: 4.5, label: l, stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' };
+      };
+      const created: GeoElement[] = [];
+      let o = findPt(oName);
+      let a = findPt(aName);
+      if (!o) { o = mkPt(oName, 0, -1); created.push(o); }
+      if (!a) { a = mkPt(aName, 3, -1); created.push(a); }
+      const line = (p1: { x: number; y: number }, p2: { x: number; y: number }, extra: Partial<LineElement>): LineElement => ({
+        id: `line-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'line', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+        stroke: '#2563eb', strokeWidth: 2, strokeStyle: 'solid', ...extra,
+      });
+      // Tia ban đầu BC: vẽ đoạn BC nếu đề nói "đoạn thẳng BC", ngược lại vẽ tia BC (nếu trên bảng chưa có gì nối B, C)
+      const hasLinkBC = existingElements.some((el) => {
+        if (el.type !== 'segment' && el.type !== 'line') return false;
+        const ends = [[el.x1, el.y1], [el.x2, el.y2]];
+        const near = (p: PointElement) => ends.some(([x, y]) => Math.hypot(x - p.x, y - p.y) < 4);
+        return near(o!) && near(a!);
+      });
+      if (!hasLinkBC) {
+        if (new RegExp(`đoạn thẳng\\s+(?:${oName}${aName}|${aName}${oName})`).test(prompt)) {
+          created.push({ id: `seg-${now}`, type: 'segment', x1: o.x, y1: o.y, x2: a.x, y2: a.y, stroke: '#2563eb', strokeWidth: 2, strokeStyle: 'solid' } as SegmentElement);
+        } else {
+          created.push(line(o, a, { isRay: true }));
+        }
+      }
+      // Tia đối: từ gốc O, hướng ngược với A
+      const away = { x: o.x + (o.x - a.x), y: o.y + (o.y - a.y) };
+      if (/^[A-Z]/.test(label)) {
+        const d = findPt(label) ?? { ...mkPt(label, 0, 0), x: o.x + (o.x - a.x) * 0.6, y: o.y + (o.y - a.y) * 0.6 };
+        if (!findPt(label)) created.push(d);
+        created.push(line(o, d, { isRay: true }));
+      } else {
+        created.push(line(o, away, { isRay: true, endLabel: label }));
+      }
+      return {
+        success: true,
+        message: `Đã vẽ tia ${oName}${label} là tia đối của tia ${oName}${aName}!`,
+        newElements: [...existingElements, ...created],
+      };
+    }
+  }
 
   // -------------------------------------------------------------
   // 1. TÔ MÀU (Coloring / Fill styling)

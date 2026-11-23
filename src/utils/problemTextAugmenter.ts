@@ -327,6 +327,52 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     added.push(`Giao điểm ${name} của ${lines[0].join('')} và ${lines[1].join('')}`);
   }
 
+  // ---- 8. Tia đối: "tia Bx là tia đối của tia BC", "tia Bx đối với tia BC",
+  //          "tia đối của tia BC là tia Bx", "tia đối Bx của tia BC" (x chữ thường = nhãn; D chữ hoa = điểm mới)
+  const RAYNAME = `(?:[a-z]|${NAME})`;
+  const oppositePatterns: [RegExp, (m: RegExpMatchArray) => [string, string, string]][] = [
+    [
+      new RegExp(`tia\\s+(${NAME})(${RAYNAME})\\s+(?:là\\s+)?(?:tia\\s+)?đối\\s+(?:của|với)\\s+tia\\s+(${NAME})(${NAME})`, 'g'),
+      (m) => [m[3], m[4], m[2]],
+    ],
+    [
+      new RegExp(`tia đối của tia\\s+(${NAME})(${NAME})\\s+là\\s+tia\\s+(${NAME})(${RAYNAME})`, 'g'),
+      (m) => [m[1], m[2], m[4]],
+    ],
+    [
+      new RegExp(`tia đối\\s+(${NAME})(${RAYNAME})\\s+của\\s+tia\\s+(${NAME})(${NAME})`, 'g'),
+      (m) => [m[3], m[4], m[2]],
+    ],
+  ];
+  for (const [re, pick] of oppositePatterns) {
+    for (const m of text.matchAll(re)) {
+      const [origin, away, label] = pick(m);
+      if (!has(origin) || !has(away) || label === away) continue;
+      // Bỏ các lệnh tia của AI từ cùng gốc với cùng nhãn (AI hay vẽ nhầm thành tia trùng với BC)
+      for (let i = commands.length - 1; i >= 0; i--) {
+        const c = commands[i];
+        let cmdName = '';
+        let args: string[] = [];
+        if (typeof c === 'string') {
+          const mm = c.match(/^\s*(RAY_OPPOSITE|RAY_ANGLE|RAY|LINE|TiaDoi|Tia)\s*\(([^)]*)\)/i);
+          if (mm) {
+            cmdName = mm[1].toUpperCase();
+            args = mm[2].split(',').map((a: string) => a.trim());
+          }
+        } else if (c && typeof c === 'object') {
+          cmdName = String(c.cmd || '').toUpperCase();
+          args = Array.isArray(c.args) ? c.args.map(String) : [c.from, c.through ?? c.to, c.label].map((v) => String(v ?? ''));
+        }
+        if (/^(RAY|RAY_ANGLE|RAY_OPPOSITE|TIA|TIADOI)$/.test(cmdName) && args[0] === origin && args.slice(1).includes(label)) {
+          commands.splice(i, 1);
+        }
+      }
+      commands.push({ cmd: 'RAY_OPPOSITE', args: [origin, away, label] });
+      if (/^[A-Z]/.test(label)) defined.add(label);
+      added.push(`Tia ${origin}${label} là tia đối của tia ${origin}${away}`);
+    }
+  }
+
   if (added.length > 0) {
     data.commands = commands;
     data.segments = segments;
