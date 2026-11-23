@@ -15,6 +15,7 @@
     "katex": "^0.19.1",
     "konva": "^10.10.0",
     "lucide-react": "^1.77.0",
+    "mathlive": "^0.111.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-konva": "^19.3.2",
