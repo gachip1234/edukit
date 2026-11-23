@@ -21,8 +21,6 @@ import type { AgentInteractionLevel } from "./components/RightChatSidebar";
 import {
   exportProjectToFile,
   readProjectFromFile,
-  autoSaveProjectSession,
-  getAutoSavedProjectSession,
 } from "./utils/projectFileManager";
 import { copyStageToClipboard, downloadDataUrl } from "./utils/clipboardExport";
 import { parseAndExecuteCommand } from "./utils/commandParser";
@@ -38,14 +36,10 @@ import { CheckCircle2, AlertCircle, Info } from "lucide-react";
 
 export const App: React.FC = () => {
   // Elements & History state
-  // Khôi phục phiên làm việc đã tự động lưu (nếu có) ngay khi mở app
-  const [restoredSession] = useState(() => getAutoSavedProjectSession());
-  const [elements, setElements] = useState<GeoElement[]>(
-    () => restoredSession?.elements ?? [],
-  );
-  const [history, setHistory] = useState<GeoElement[][]>(() => [
-    restoredSession?.elements ?? [],
-  ]);
+  // Mỗi lần mở/tải lại trang, canvas luôn bắt đầu trống
+  // (muốn giữ hình thì dùng "Lưu file" / "Mở file")
+  const [elements, setElements] = useState<GeoElement[]>([]);
+  const [history, setHistory] = useState<GeoElement[][]>([[]]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   // Active Tool & Selection
@@ -58,7 +52,8 @@ export const App: React.FC = () => {
 
   // Grid, Axes & Snapping settings
   const [showGrid, setShowGrid] = useState(true);
-  const [showAxes, setShowAxes] = useState(true);
+  // Trục tọa độ ẩn khi mở trang; bật lại bằng nút "Trục tọa độ" trên thanh công cụ
+  const [showAxes, setShowAxes] = useState(false);
   const [snapToGrid, setSnapToGrid] = useState(false);
   const [zoom, setZoom] = useState(1);
 
@@ -76,15 +71,12 @@ export const App: React.FC = () => {
   const [labelSettingsOpen, setLabelSettingsOpen] = useState(false);
 
   // Global Point Label Style
-  const [globalLabelStyle, setGlobalLabelStyle] = useState<GlobalLabelStyle>(
-    () =>
-      restoredSession?.globalLabelStyle ?? {
-        fontSize: 15,
-        color: "#0f172a",
-        fontFamily: "serif",
-        fontStyle: "italic bold",
-      },
-  );
+  const [globalLabelStyle, setGlobalLabelStyle] = useState<GlobalLabelStyle>({
+    fontSize: 15,
+    color: "#0f172a",
+    fontFamily: "serif",
+    fontStyle: "italic bold",
+  });
 
   const handleSaveGlobalLabelStyle = (
     newStyle: GlobalLabelStyle,
@@ -129,11 +121,6 @@ export const App: React.FC = () => {
   const isArrowRepeatingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-save session to localStorage whenever elements or globalLabelStyle change
-  // (lưu cả khi canvas trống, để hình đã xóa không bị khôi phục lại sau khi tải lại trang)
-  useEffect(() => {
-    autoSaveProjectSession(elements, globalLabelStyle);
-  }, [elements, globalLabelStyle]);
 
   // Save project (.edukit) to computer
   const handleSaveProject = () => {
@@ -596,7 +583,6 @@ export const App: React.FC = () => {
             updateElementsWithHistory(regexRes.newElements);
           }
           showToast(regexRes.message, "success");
-          if (!showAxes) setShowAxes(true);
           return { success: true, message: regexRes.message, elementCount: newCount };
         }
 
@@ -610,7 +596,6 @@ export const App: React.FC = () => {
             updateElementsWithHistory(quickClassic.updatedElements);
           }
           showToast(quickClassic.message, "success");
-          if (!showAxes) setShowAxes(true);
           return { success: true, message: quickClassic.message, elementCount: newCount };
         }
       }
@@ -627,7 +612,6 @@ export const App: React.FC = () => {
             updateElementsWithHistory(classicRes.updatedElements);
           }
           showToast(classicRes.message, "success");
-          if (!showAxes) setShowAxes(true);
           return {
             success: true,
             message: `${classicRes.message}\n(Được vẽ tức thì bằng Bộ giải hình học Sư phạm THCS/THPT)`,
@@ -653,7 +637,6 @@ export const App: React.FC = () => {
             updateElementsWithHistory(classicRes.updatedElements);
           }
           showToast(classicRes.message, "success");
-          if (!showAxes) setShowAxes(true);
           return {
             success: true,
             message: `${classicRes.message}\n(Được vẽ tức thì bằng Bộ giải hình học Sư phạm THCS/THPT)`,
@@ -696,7 +679,6 @@ export const App: React.FC = () => {
         if (!signal?.aborted) {
           updateElementsWithHistory(aiRes.constructedElements);
           showToast(aiRes.explanation, "success");
-          if (!showAxes) setShowAxes(true);
         }
         const reasoningSummary = aiRes.reasoning
           ? `\n\n📐 Kế hoạch dựng hình (reasoning):\n${aiRes.reasoning}`
@@ -735,7 +717,6 @@ export const App: React.FC = () => {
       if (executed.length > 0) {
         updateElementsWithHistory(currentList);
         showToast(aiRes.explanation, "success");
-        if (!showAxes) setShowAxes(true);
         const reasoningSummary = aiRes.reasoning ? `\n\n📐 Phân tích tọa độ (reasoning):\n${aiRes.reasoning}` : '';
         return {
           success: true,
