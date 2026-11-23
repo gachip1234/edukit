@@ -820,7 +820,7 @@ export const App: React.FC = () => {
     setIsExporting(false);
     if (result.dataUrl) {
       downloadDataUrl(result.dataUrl, `hinh-hoc-toan-${Date.now()}.png`);
-      showToast("Đã tải xuống ảnh PNG (nền trắng) — chèn vào Word bằng Insert → Pictures.");
+      showToast("Đã tải xuống ảnh PNG trong suốt — chèn vào Word bằng Insert → Pictures.");
     } else {
       showToast(result.message, "error");
     }
