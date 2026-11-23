@@ -102,7 +102,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       if (!trimmed) continue;
 
       // 1. TANGENTS(M, c1, A, B)
-      const tangMatch = trimmed.match(/^TANGENTS?\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const tangMatch = trimmed.match(/^TANGENTS?\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (tangMatch) {
         result.push({
           cmd: 'TANGENTS',
@@ -114,7 +114,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 2. DIAMETER(c1, A, C)
-      const diaMatch = trimmed.match(/^DIAMETER\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const diaMatch = trimmed.match(/^DIAMETER\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (diaMatch) {
         result.push({
           cmd: 'DIAMETER',
@@ -125,8 +125,20 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
+      // 2b. BISECTOR(A, B, C, D): phân giác góc BAC cắt BC tại D
+      const bisMatch = trimmed.match(/^(?:BISECTOR|PhanGiac)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
+      if (bisMatch) {
+        result.push({
+          cmd: 'BISECTOR',
+          from: bisMatch[1],
+          to: [bisMatch[2], bisMatch[3]],
+          foot: bisMatch[4],
+        });
+        continue;
+      }
+
       // 3. MIDPOINT(A, B, I)
-      const midMatch = trimmed.match(/^(?:MIDPOINT|TrungDiem)\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const midMatch = trimmed.match(/^(?:MIDPOINT|TrungDiem)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (midMatch) {
         result.push({
           cmd: 'MIDPOINT',
@@ -137,7 +149,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 4. PERPENDICULAR(A, B, C, H)
-      const perpMatch = trimmed.match(/^(?:PERPENDICULAR|DuongCao|HinhChieu)\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const perpMatch = trimmed.match(/^(?:PERPENDICULAR|DuongCao|HinhChieu)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (perpMatch) {
         result.push({
           cmd: 'PERPENDICULAR',
@@ -149,7 +161,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 5. INTERSECT(A, B, C, D, E)
-      const interMatch = trimmed.match(/^INTERSECT\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const interMatch = trimmed.match(/^INTERSECT\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (interMatch) {
         result.push({
           cmd: 'INTERSECT',
@@ -161,7 +173,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 6. CIRCLE(c1, O, 3) or DuongTron(O, 3)
-      const circMatch = trimmed.match(/^(?:CIRCLE|DuongTron)\s*\(\s*(?:([A-Za-z0-9_]+)\s*,\s*)?([A-Za-z0-9_]+)\s*,\s*([0-9.]+)\s*\)/i);
+      const circMatch = trimmed.match(/^(?:CIRCLE|DuongTron)\s*\(\s*(?:([A-Za-z0-9_']+)\s*,\s*)?([A-Za-z0-9_']+)\s*,\s*([0-9.]+)\s*\)/i);
       if (circMatch) {
         result.push({
           cmd: 'CIRCLE',
@@ -173,7 +185,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 7. SEGMENT(A, B) or DoanThang(A, B) or DoanThangDut(A, B)
-      const segDutMatch = trimmed.match(/^(?:SEGMENT_DASHED|DoanThangDut)\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const segDutMatch = trimmed.match(/^(?:SEGMENT_DASHED|DoanThangDut)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (segDutMatch) {
         result.push({
           cmd: 'SEGMENT',
@@ -184,7 +196,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
-      const segMatch = trimmed.match(/^(?:SEGMENT|DoanThang)\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([A-Za-z0-9_]+)\s*\)/i);
+      const segMatch = trimmed.match(/^(?:SEGMENT|DoanThang)\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([A-Za-z0-9_']+)\s*\)/i);
       if (segMatch) {
         result.push({
           cmd: 'SEGMENT',
@@ -196,7 +208,7 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
       }
 
       // 8. POINT(A, 0, 0) or A = (0, 0)
-      const ptMatch = trimmed.match(/^(?:POINT\s*\(\s*([A-Za-z0-9_]+)\s*,\s*([+-]?[0-9.]+)\s*,\s*([+-]?[0-9.]+)\s*\)|([A-Za-z0-9_]+)\s*=\s*\(\s*([+-]?[0-9.]+)\s*,\s*([+-]?[0-9.]+)\s*\))/i);
+      const ptMatch = trimmed.match(/^(?:POINT\s*\(\s*([A-Za-z0-9_']+)\s*,\s*([+-]?[0-9.]+)\s*,\s*([+-]?[0-9.]+)\s*\)|([A-Za-z0-9_']+)\s*=\s*\(\s*([+-]?[0-9.]+)\s*,\s*([+-]?[0-9.]+)\s*\))/i);
       if (ptMatch) {
         const name = ptMatch[1] || ptMatch[4];
         const x = parseFloat(ptMatch[2] || ptMatch[5]);
@@ -244,7 +256,12 @@ export interface ConstructionResult {
 /** Tách danh sách tên điểm từ mảng hoặc chuỗi ("BC", "B,C", "B C" → ["B","C"]). */
 export function toNameList(value: unknown): string[] {
   // Bỏ ký tự rác AI hay chèn vào: dấu ngoặc, nháy ('["B","C"]', "(A)", "'M'")
-  const clean = (v: unknown) => String(v).replace(/[\[\]"'`()]/g, ' ').trim();
+  // Giữ dấu phẩy trên kiểu O' (O phẩy); chỉ bỏ nháy đơn bao quanh cả tên ('M')
+  const clean = (v: unknown) =>
+    String(v)
+      .replace(/[\[\]"`()]/g, ' ')
+      .replace(/(^|[\s,])'([A-Za-z0-9_]+)'(?=$|[\s,])/g, '$1$2')
+      .trim();
   if (Array.isArray(value)) return value.flatMap((v) => toNameList(clean(v)));
   if (typeof value !== 'string') return [];
   const str = clean(value);
@@ -275,6 +292,7 @@ function autoPlaceMissingBasePoints(
         if (c.name) derived.add(String(c.name).trim());
         break;
       case 'PERPENDICULAR':
+      case 'BISECTOR':
         if (c.foot || c.name) derived.add(String(c.foot || c.name).trim());
         break;
       case 'TANGENTS':
@@ -309,6 +327,7 @@ function autoPlaceMissingBasePoints(
         add(toNameList(c.of));
         break;
       case 'PERPENDICULAR':
+      case 'BISECTOR':
         add(toNameList(c.from));
         add(toNameList(c.to));
         break;
@@ -721,7 +740,8 @@ export function executeConstructionCommands(
       case 'MIDPOINT': {
         // {"cmd": "MIDPOINT", "of": ["A", "B"], "name": "I"}
         const [pA, pB] = toNameList(cmd.of);
-        const name = (cmd.name || 'I').trim();
+        // Không tự đặt tên mặc định (trước đây là "I" → các trung điểm đè lên nhau)
+        const name = String(cmd.name || cmd.foot || '').trim();
         const ptA = getPt(pA);
         const ptB = getPt(pB);
 
@@ -778,7 +798,7 @@ export function executeConstructionCommands(
         // {"cmd": "INTERSECT", "obj1": ["A", "B"], "obj2": ["C", "D"], "name": "E"}
         const [pA, pB] = toNameList(cmd.obj1);
         const [pC, pD] = toNameList(cmd.obj2);
-        const name = (cmd.name || 'E').trim();
+        const name = String(cmd.name || '').trim();
 
         const ptA = getPt(pA);
         const ptB = getPt(pB);
@@ -800,7 +820,41 @@ export function executeConstructionCommands(
             const ix = (c1 * b2 - c2 * b1) / det;
             const iy = (a1 * c2 - a2 * c1) / det;
             points.set(name, { name, x: Math.round(ix * 1000) / 1000, y: Math.round(iy * 1000) / 1000 });
+            // Giao điểm nằm ngoài đoạn (vd: hai cạnh bên hình thang kéo dài) → vẽ phần kéo dài nét đứt
+            for (const [p1, p2, n1, n2] of [
+              [ptA, ptB, pA, pB],
+              [ptC, ptD, pC, pD],
+            ] as [MathPoint, MathPoint, string, string][]) {
+              const dx = p2.x - p1.x;
+              const dy = p2.y - p1.y;
+              const t = ((ix - p1.x) * dx + (iy - p1.y) * dy) / (dx * dx + dy * dy || 1);
+              if (t > 1 + 1e-6) addSegment(n2, name, true);
+              else if (t < -1e-6) addSegment(n1, name, true);
+            }
             executedLog.push(`Giao điểm ${name} của ${pA}${pB} và ${pC}${pD}`);
+          }
+        }
+        break;
+      }
+
+      case 'BISECTOR': {
+        // {"cmd": "BISECTOR", "from": "A", "to": ["B", "C"], "foot": "D"}: phân giác góc BAC cắt BC tại D
+        const from = String(cmd.from || '').trim();
+        const [pB, pC] = toNameList(cmd.to);
+        const foot = String(cmd.foot || cmd.name || '').trim();
+        const ptA = getPt(from);
+        const ptB = getPt(pB);
+        const ptC = getPt(pC);
+        if (ptA && ptB && ptC && foot) {
+          // Tính chất đường phân giác: DB / DC = AB / AC
+          const ab = Math.hypot(ptB.x - ptA.x, ptB.y - ptA.y);
+          const ac = Math.hypot(ptC.x - ptA.x, ptC.y - ptA.y);
+          if (ab + ac > 1e-9) {
+            const dx = (ac * ptB.x + ab * ptC.x) / (ab + ac);
+            const dy = (ac * ptB.y + ab * ptC.y) / (ab + ac);
+            points.set(foot, { name: foot, x: Math.round(dx * 1000) / 1000, y: Math.round(dy * 1000) / 1000 });
+            addSegment(from, foot, Boolean(cmd.dashed));
+            executedLog.push(`Phân giác ${from}${foot} của góc ${pB}${from}${pC}`);
           }
         }
         break;
