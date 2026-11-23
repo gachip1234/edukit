@@ -108,10 +108,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   ];
 
   return (
-    <aside className="w-18 bg-white/95 backdrop-blur-md border-r border-slate-200 shadow-sm flex flex-col justify-between items-center py-4 z-20 select-none">
+    <aside className="w-14 md:w-18 short:w-14 shrink-0 bg-white/95 backdrop-blur-md border-r border-slate-200 shadow-sm flex flex-col justify-between items-center gap-3 py-2 md:py-4 z-20 select-none overflow-y-auto no-scrollbar">
       {/* Tool section */}
-      <div className="flex flex-col items-center gap-2 w-full px-2">
-        <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
+      <div className="flex flex-col items-center gap-1 md:gap-2 w-full px-1.5 md:px-2">
+        <div className="hidden md:block short:hidden text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
           Công cụ
         </div>
         {tools.map((t) => {
@@ -121,7 +121,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               key={t.id}
               onClick={() => onSelectTool(t.id)}
               title={`${t.tooltip}`}
-              className={`relative group flex flex-col items-center justify-center w-14 h-13 rounded-xl transition-all duration-150 ${
+              className={`relative group shrink-0 flex flex-col items-center justify-center w-11 h-11 md:w-14 md:h-13 short:w-11 short:h-11 rounded-xl transition-all duration-150 ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30 scale-102 ring-2 ring-blue-500/20'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -130,14 +130,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <div className="relative">
                 {t.icon}
                 <span
-                  className={`absolute -bottom-1 -right-2 text-[9px] font-bold px-1 rounded ${
+                  className={`hidden md:inline short:hidden absolute -bottom-1 -right-2 text-[9px] font-bold px-1 rounded ${
                     isActive ? 'bg-blue-800 text-blue-100' : 'bg-slate-200 text-slate-600'
                   }`}
                 >
                   {t.shortcut}
                 </span>
               </div>
-              <span className="text-[10px] font-medium mt-1 leading-tight">{t.label}</span>
+              <span className="hidden md:block short:hidden text-[10px] font-medium mt-1 leading-tight">{t.label}</span>
             </button>
           );
         })}
@@ -148,16 +148,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onOpenPresets}
           title="Mẫu hình học có sẵn (Tam giác, Tứ giác, Đường tròn nội/ngoại tiếp...)"
-          className="flex flex-col items-center justify-center w-14 h-12 rounded-xl text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200/60"
+          className="shrink-0 flex flex-col items-center justify-center w-11 h-11 md:w-14 md:h-12 short:w-11 short:h-11 rounded-xl text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors border border-amber-200/60"
         >
           <Sparkles className="w-4 h-4 text-amber-600 mb-0.5" />
-          <span className="text-[10px] font-medium">Mẫu hình</span>
+          <span className="hidden md:block short:hidden text-[10px] font-medium">Mẫu hình</span>
         </button>
       </div>
 
       {/* History and Actions section */}
-      <div className="flex flex-col items-center gap-2 w-full px-2">
-        <div className="flex gap-1">
+      <div className="flex flex-col items-center gap-2 w-full px-1.5 md:px-2">
+        <div className="flex flex-col md:flex-row gap-1">
           <button
             onClick={onUndo}
             disabled={!canUndo}
@@ -187,7 +187,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <button
           onClick={onClear}
           title="Xóa trắng bảng vẽ"
-          className="w-13 h-9 flex items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors"
+          className="w-11 md:w-13 h-9 flex items-center justify-center rounded-lg text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors"
         >
           <Trash2 className="w-4 h-4" />
         </button>

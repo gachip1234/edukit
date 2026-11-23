@@ -1,4 +1,7 @@
 @import "tailwindcss";
+
+/* Màn hình thấp (điện thoại xoay ngang): dùng giao diện thu gọn như trên điện thoại */
+@custom-variant short (@media (max-height: 500px));
 @import "katex/dist/katex.min.css";
 
 html, body, #root {
@@ -8,4 +11,12 @@ html, body, #root {
   height: 100%;
   overflow: hidden;
   user-select: none;
+}
+
+/* Ẩn thanh cuộn của các dải nút cuộn ngang/dọc trên màn hình nhỏ (vẫn cuộn được bằng ngón tay) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
