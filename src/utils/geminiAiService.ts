@@ -159,13 +159,14 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
      {"vertices": ["A", "B", "C"]}
    ]
 
-5. "commands": Các lệnh dựng hình giải tích bổ trợ (nếu có các yếu tố hình học giải tích cần tính toán chính xác):
-   - {"cmd": "TANGENTS", "from": "M", "circle": "c1", "names": ["A", "B"]} (Tự động tính 2 tiếp điểm A, B, vẽ 2 tiếp tuyến MA, MB, bán kính OA, OB và góc vuông)
-   - {"cmd": "DIAMETER", "circle": "c1", "through": "A", "otherEnd": "C"} (Đường kính AC qua tâm O)
-   - {"cmd": "MIDPOINT", "of": ["A", "B"], "name": "I"} (Trung điểm I của AB)
-   - {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "H"} (Chân đường cao H hạ từ A xuống BC)
-   - {"cmd": "INTERSECT", "obj1": ["A", "B"], "obj2": ["C", "D"], "name": "E"} (Giao điểm E của AB và CD)
-   - {"cmd": "TRIANGLE", "names": ["A", "B", "C"], "type": "right_at_A", "ab": 3, "ac": 4} (Tam giác vuông tại A)
+5. "commands": Mảng các CHUỖI lệnh dựng hình, ghi ĐỦ tham số theo đúng thứ tự (tham số cuối là tên điểm mới):
+   - "PERPENDICULAR(A, B, C, H)"   → H là chân đường vuông góc hạ từ A xuống BC (tự vẽ AH và ký hiệu góc vuông)
+   - "MIDPOINT(B, C, M)"           → M là trung điểm của BC
+   - "INTERSECT(A, D, B, E, H)"    → H là giao điểm của đường thẳng AD và BE (tự vẽ phần kéo dài nét đứt nếu cần)
+   - "BISECTOR(A, B, C, D)"        → AD là phân giác góc BAC, D nằm trên BC (tự vẽ AD)
+   - "TANGENTS(M, c1, A, B)"       → từ M kẻ 2 tiếp tuyến MA, MB tới đường tròn c1 (tự tính tiếp điểm A, B)
+   - "DIAMETER(c1, A, C)"          → AC là đường kính của c1 (tự tính C đối xứng A qua tâm)
+   - "SEGMENT(A, M)" / "SEGMENT_DASHED(A, M)" → đoạn thẳng AM (nét liền / nét đứt)
 
 QUY TẮC BẮT BUỘC:
 - Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, O, ...).
@@ -173,10 +174,11 @@ QUY TẮC BẮT BUỘC:
   Chỉ được bỏ qua các điểm do "commands" tự tính ra (chân đường cao "foot", trung điểm, giao điểm, tiếp điểm, đầu kia đường kính).
 - Chọn tọa độ đúng với giả thiết đề bài (vuông tại A, cân tại A, độ dài cạnh, điểm nằm trên đường tròn...) và có dáng tổng quát, dễ nhìn.
 - Điểm nằm trên đường tròn tâm O bán kính R phải có khoảng cách tới O đúng bằng R.
-- Trong "commands": mỗi lệnh chỉ dùng đúng các trường như mẫu; "to", "of", "obj1", "obj2", "names" luôn là MẢNG tên điểm (vd ["B", "C"]);
-  PERPENDICULAR luôn có "foot". Không lặp lại cùng một lệnh.
+- Mỗi lệnh trong "commands" là MỘT CHUỖI đúng cú pháp như trên, KHÔNG bỏ sót tham số nào (đặc biệt là tên điểm mới ở cuối),
+  đặt đúng tên điểm theo đề bài (đường cao AD → "PERPENDICULAR(A, B, C, D)"). Không lặp lại cùng một lệnh.
 - MỖI yếu tố đề bài nêu ra PHẢI có lệnh tương ứng trong "commands" (không được chỉ nhắc trong "reasoning"):
-  đường cao → PERPENDICULAR; trung điểm → MIDPOINT; giao điểm / "cắt nhau tại" / "đồng quy tại" → INTERSECT;
+  đường cao / "vuông góc tại" → PERPENDICULAR; trung điểm → MIDPOINT; trung tuyến AM → MIDPOINT + SEGMENT(A, M);
+  phân giác → BISECTOR; giao điểm / "cắt nhau tại" / "đồng quy tại" → INTERSECT; đường chéo → SEGMENT;
   tiếp tuyến → TANGENTS; đường kính → DIAMETER. Trước khi trả lời, đối chiếu lại đề bài để không bỏ sót yếu tố nào.
 
 VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. Gọi M là trung điểm BC."
@@ -188,8 +190,8 @@ VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. G�
     {"name": "C", "x": 4, "y": 0}
   ],
   "commands": [
-    {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "H"},
-    {"cmd": "MIDPOINT", "of": ["B", "C"], "name": "M"}
+    "PERPENDICULAR(A, B, C, H)",
+    "MIDPOINT(B, C, M)"
   ],
   "polygons": [{"vertices": ["A", "B", "C"]}],
   "segments": [{"from": "A", "to": "M", "dashed": true}],
@@ -207,10 +209,10 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
   ],
   "circles": [{"name": "c1", "center": "O", "r": 4}],
   "commands": [
-    {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "D"},
-    {"cmd": "PERPENDICULAR", "from": "B", "to": ["A", "C"], "foot": "E"},
-    {"cmd": "PERPENDICULAR", "from": "C", "to": ["A", "B"], "foot": "F"},
-    {"cmd": "INTERSECT", "obj1": ["A", "D"], "obj2": ["B", "E"], "name": "H"}
+    "PERPENDICULAR(A, B, C, D)",
+    "PERPENDICULAR(B, A, C, E)",
+    "PERPENDICULAR(C, A, B, F)",
+    "INTERSECT(A, D, B, E, H)"
   ],
   "polygons": [{"vertices": ["A", "B", "C"]}],
   "segments": [],
@@ -312,38 +314,9 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
           },
           commands: {
             type: 'ARRAY',
-            description: 'Danh sách các lệnh dựng hình chuẩn xác bổ trợ',
-            items: {
-              type: 'OBJECT',
-              properties: {
-                cmd: { type: 'STRING' },
-                name: { type: 'STRING' },
-                names: { type: 'ARRAY', items: { type: 'STRING' } },
-                x: { type: 'NUMBER' },
-                y: { type: 'NUMBER' },
-                center: { type: 'STRING' },
-                r: { type: 'NUMBER' },
-                from: { type: 'STRING', description: 'Tên MỘT điểm, vd "A"' },
-                to: {
-                  type: 'ARRAY',
-                  items: { type: 'STRING' },
-                  description: 'Mảng tên điểm, vd ["B", "C"] (PERPENDICULAR: 2 đầu cạnh; SEGMENT: ["B"])',
-                },
-                circle: { type: 'STRING' },
-                through: { type: 'STRING' },
-                otherEnd: { type: 'STRING' },
-                of: { type: 'ARRAY', items: { type: 'STRING' } },
-                foot: { type: 'STRING', description: 'BẮT BUỘC với PERPENDICULAR: tên chân đường cao, vd "D"' },
-                obj1: { type: 'ARRAY', items: { type: 'STRING' } },
-                obj2: { type: 'ARRAY', items: { type: 'STRING' } },
-                type: { type: 'STRING' },
-                ab: { type: 'NUMBER' },
-                ac: { type: 'NUMBER' },
-                bc: { type: 'NUMBER' },
-                dashed: { type: 'BOOLEAN' },
-              },
-              required: ['cmd'],
-            },
+            description:
+              'Lệnh dựng hình dạng chuỗi, đủ tham số theo đúng thứ tự, vd "PERPENDICULAR(A, B, C, H)", "MIDPOINT(B, C, M)", "INTERSECT(A, D, B, E, H)", "BISECTOR(A, B, C, D)", "TANGENTS(M, c1, A, B)", "DIAMETER(c1, A, C)", "SEGMENT(A, M)", "SEGMENT_DASHED(A, M)"',
+            items: { type: 'STRING' },
           },
         },
         required: ['reasoning', 'points', 'commands', 'explanation'],
