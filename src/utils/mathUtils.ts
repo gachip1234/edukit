@@ -4,6 +4,7 @@ import type {
   PolygonElement,
   StrokeStyle,
 } from '../types/geometry';
+import { computeVisibleLine, lineExtentPoints } from './lineLabels';
 
 export interface EdgeTarget {
   elementId: string;
@@ -490,11 +491,15 @@ export const getElementsBoundingBox = (
         break;
       }
       case 'line': {
-        // For infinite lines, bound by the defining points with margin
-        minX = Math.min(minX, el.x1, el.x2);
-        minY = Math.min(minY, el.y1, el.y2);
-        maxX = Math.max(maxX, el.x1, el.x2);
-        maxY = Math.max(maxY, el.y1, el.y2);
+        // Đường thẳng / tia: lấy đúng phần đang hiển thị (vẽ vừa đủ) cùng nhãn ở hai đầu
+        const vis = computeVisibleLine(el.x1, el.y1, el.x2, el.y2, 100000, 100000, Boolean(el.isRay), lineExtentPoints(el, elements));
+        const [ax, ay, bx, by] = vis.points;
+        const xs = [ax, bx, vis.end.x + 14, ...(vis.start ? [vis.start.x, vis.start.x + 14] : [])];
+        const ys = [ay, by, vis.end.y + 18, ...(vis.start ? [vis.start.y, vis.start.y + 18] : [])];
+        minX = Math.min(minX, ...xs);
+        minY = Math.min(minY, ...ys);
+        maxX = Math.max(maxX, ...xs);
+        maxY = Math.max(maxY, ...ys);
         break;
       }
       case 'circle': {
