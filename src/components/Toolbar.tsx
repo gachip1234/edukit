@@ -5,6 +5,7 @@ import {
   Dot,
   Minus,
   MoveHorizontal,
+  MoveRight,
   Circle,
   Hexagon,
   Type,
@@ -71,6 +72,13 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       tooltip: 'Vẽ đường thẳng vô hạn qua 2 điểm (L)',
       shortcut: 'L',
       icon: <MoveHorizontal className="w-5 h-5" strokeWidth={2} />,
+    },
+    {
+      id: 'ray',
+      label: 'Tia',
+      tooltip: 'Vẽ tia: bấm vào gốc rồi kéo theo hướng tia (R)',
+      shortcut: 'R',
+      icon: <MoveRight className="w-5 h-5" strokeWidth={2} />,
     },
     {
       id: 'circle',

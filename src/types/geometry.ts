@@ -3,6 +3,7 @@ export type ToolType =
   | 'point'
   | 'segment'
   | 'line'
+  | 'ray'
   | 'circle'
   | 'polygon'
   | 'angle'
@@ -71,6 +72,12 @@ export interface LineElement extends BaseElement {
   y1: number;
   x2: number;
   y2: number;
+  /** true = tia: bắt đầu tại (x1, y1), đi qua (x2, y2) và kéo dài về phía đó */
+  isRay?: boolean;
+  /** Nhãn ở đầu phía (x1, y1) của đường thẳng, vd "x" trong đường thẳng xy (tia không dùng) */
+  startLabel?: string;
+  /** Nhãn ở đầu phía (x2, y2): tia Ox → "x"; đường thẳng d → "d"; đường thẳng xy → "y" */
+  endLabel?: string;
 }
 
 export interface CircleElement extends BaseElement {

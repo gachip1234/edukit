@@ -1,5 +1,6 @@
 import type { GeoElement } from '../types/geometry';
 import { augmentWithProblemText } from './problemTextAugmenter';
+import { describeFigureForPrompt, mergeFigures, type FigureSpec } from './figureContext';
 import {
   executeConstructionCommands,
   type ConstructionCommand,
@@ -46,6 +47,8 @@ export interface GeminiApiResponse {
   rawText?: string;
   /** Model thực sự đã dùng (có thể là model dự phòng) */
   model?: string;
+  /** true = AI đã vẽ TIẾP trên hình cũ (đã gộp); false = vẽ hình mới */
+  continued?: boolean;
   error?: string;
 }
 
@@ -99,7 +102,9 @@ export async function callGeminiGeometryAi(
   model?: string,
   canvasWidth: number = 1000,
   canvasHeight: number = 700,
-  externalSignal?: AbortSignal
+  externalSignal?: AbortSignal,
+  /** Hình đang có trên bảng + các yêu cầu chat trước đó → AI vẽ tiếp thay vì vẽ lại */
+  context?: { figure: FigureSpec; history: string[] }
 ): Promise<GeminiApiResponse> {
   const cleanKey = apiKey.trim();
   if (!cleanKey) {
@@ -126,6 +131,9 @@ export async function callGeminiGeometryAi(
   let curModel = modelQueue[0];
   const endpointFor = (m: string) =>
     `https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`;
+
+  const hasContext = Boolean(context && context.figure && context.figure.points.length > 0);
+  const figureSummary = hasContext ? describeFigureForPrompt(context!.figure) : '';
 
   const systemInstruction = `
 Bạn là Trợ lý Dựng hình Toán học cho hệ thống EduKit Geometry.
@@ -167,6 +175,11 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
    - "TANGENTS(M, c1, A, B)"       → từ M kẻ 2 tiếp tuyến MA, MB tới đường tròn c1 (tự tính tiếp điểm A, B)
    - "DIAMETER(c1, A, C)"          → AC là đường kính của c1 (tự tính C đối xứng A qua tâm)
    - "SEGMENT(A, M)" / "SEGMENT_DASHED(A, M)" → đoạn thẳng AM (nét liền / nét đứt)
+   - "RAY(O, A, x)"                → tia gốc O đi qua điểm A, ghi nhãn x ở đầu tia (tia Ox). Nhãn có thể bỏ: "RAY(O, A)"
+   - "RAY_ANGLE(O, 60, y)"         → tia Oy gốc O tạo góc 60° với chiều dương trục hoành (đo ngược chiều kim đồng hồ)
+   - "LINE(A, B, d)"               → đường thẳng d đi qua A và B; "LINE(A, B, x, y)" → đường thẳng xy (nhãn x phía A, y phía B)
+   - "LINE_ANGLE(A, 30, d)"        → đường thẳng d qua A, nghiêng 30° so với trục hoành
+   (Tên tia/đường thẳng bằng CHỮ THƯỜNG như x, y, d, a, m là NHÃN, không phải điểm. Vd: góc xOy = 50° → "RAY_ANGLE(O, 0, x)", "RAY_ANGLE(O, 50, y)")
 
 QUY TẮC BẮT BUỘC:
 - Đặt tên các điểm bằng chữ cái in hoa (A, B, C, M, N, O, ...).
@@ -312,6 +325,10 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
               required: ['vertices'],
             },
           },
+          newFigure: {
+            type: 'BOOLEAN',
+            description: 'Chỉ đặt true khi đang có hình trên bảng nhưng yêu cầu mới là bài toán khác hẳn, cần vẽ hình mới',
+          },
           commands: {
             type: 'ARRAY',
             description:
@@ -340,7 +357,9 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
             role: 'user',
             parts: [
               {
-                text: `${systemInstruction}\n\nĐề bài tập / Yêu cầu vẽ hình học của người dùng:\n"""\n${prompt}\n"""`,
+                text: hasContext
+                  ? `${systemInstruction}\n\nHÌNH ĐANG CÓ TRÊN BẢNG (vẽ từ các yêu cầu trước${context!.history.length ? ': "' + context!.history.join(' / ') + '"' : ''}):\n${figureSummary}\n\nYÊU CẦU MỚI của người dùng:\n"""\n${prompt}\n"""\n\nHãy VẼ TIẾP trên hình đang có: GIỮ NGUYÊN tên và tọa độ các điểm cũ, dùng lại tên điểm cũ khi tham chiếu, và CHỈ trả về các đối tượng MỚI cần thêm (điểm mới kèm tọa độ phù hợp với hình cũ, lệnh dựng mới...). Không vẽ lại các đối tượng đã có. Chỉ khi yêu cầu mới là một bài toán KHÁC HẲN (không liên quan và không dùng điểm nào của hình cũ) thì đặt "newFigure": true và trả về toàn bộ hình mới.`
+                  : `${systemInstruction}\n\nĐề bài tập / Yêu cầu vẽ hình học của người dùng:\n"""\n${prompt}\n"""`,
               },
             ],
           },
@@ -447,8 +466,16 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
     }
 
     // Dựng hình giải tích & Auto-fit trên canvas từ toàn bộ cấu trúc AI trả về (points, circles, segments, commands)
+    // Vẽ tiếp: gộp phần AI vẽ thêm vào hình đang có (trừ khi AI báo đây là bài toán mới)
+    const continued = hasContext && parsed && parsed.newFigure !== true;
+    if (continued) {
+      parsed = mergeFigures(context!.figure, parsed);
+    }
+
     // Bổ sung các lệnh dựng hình AI bỏ sót (đường cao, trung điểm, giao điểm...) dựa trên đề bài
-    const augmented = augmentWithProblemText(parsed, prompt);
+    // (khi vẽ tiếp, đọc cả các yêu cầu trước để hiểu tên điểm đã dùng)
+    const augmentText = continued ? [...context!.history, prompt].join('\n') : prompt;
+    const augmented = augmentWithProblemText(parsed, augmentText);
     if (augmented.added.length > 0) {
       console.info('[EduKit] Bổ sung lệnh dựng hình từ đề bài:', augmented.added);
       parsed = augmented.data;
@@ -486,6 +513,7 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
       elementCount: constructRes.elements.length,
       rawText: candidateText,
       model: curModel,
+      continued,
     };
   } catch (err: any) {
     clearTimeout(internalTimeout);

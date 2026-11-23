@@ -26,7 +26,6 @@ import {
   getDashArray,
   snapCoordinate,
   distance,
-  computeInfiniteLinePoints,
   computeAngleDetails,
   getNextAvailableLabel,
   getNextAvailableLabels,
@@ -38,6 +37,7 @@ import {
 } from '../utils/mathUtils';
 import type { EdgeTarget } from '../utils/mathUtils';
 import { GridLayer } from './GridLayer';
+import { computeVisibleLine } from '../utils/lineLabels';
 import { LatexShape } from './LatexShape';
 
 interface CanvasAreaProps {
@@ -587,7 +587,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    if (currentTool === 'segment' || currentTool === 'line' || currentTool === 'circle') {
+    if (currentTool === 'segment' || currentTool === 'line' || currentTool === 'ray' || currentTool === 'circle') {
       setDrawingStart(pos);
       setCurrentPointer(pos);
     }
@@ -719,10 +719,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
         onElementsChange([...elements, newSeg, pt1, pt2]);
         onSelectIds([newSeg.id]);
-      } else if (currentTool === 'line') {
+      } else if (currentTool === 'line' || currentTool === 'ray') {
         const newLine: LineElement = {
           id: `line-${Date.now()}`,
           type: 'line',
+          ...(currentTool === 'ray' ? { isRay: true } : {}),
           x1: drawingStart.x,
           y1: drawingStart.y,
           x2: currentPointer.x,
@@ -823,15 +824,17 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         />
       );
     }
-    if (currentTool === 'line' && drawingStart && currentPointer) {
-      const [lx1, ly1, lx2, ly2] = computeInfiniteLinePoints(
+    if ((currentTool === 'line' || currentTool === 'ray') && drawingStart && currentPointer) {
+      if (Math.hypot(currentPointer.x - drawingStart.x, currentPointer.y - drawingStart.y) < 1) return null;
+      const [lx1, ly1, lx2, ly2] = computeVisibleLine(
         drawingStart.x,
         drawingStart.y,
         currentPointer.x,
         currentPointer.y,
-        dimensions.width,
-        dimensions.height
-      );
+        dimensions.width / zoom,
+        dimensions.height / zoom,
+        currentTool === 'ray',
+      ).points;
       return (
         <KonvaLine
           points={[lx1, ly1, lx2, ly2]}
@@ -1159,7 +1162,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         );
       }
 
-      case 'line': {
+      case 'line':
+      case 'ray': {
         return (
           <Group x={currentPointer.x + 16} y={currentPointer.y + 16} listening={false} opacity={0.65}>
             <KonvaLine points={[-16, 12, 16, -12]} stroke="#2563eb" strokeWidth={2} dash={[4, 2]} />
@@ -1842,15 +1846,32 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
               }
 
               case 'line': {
-                const [lx1, ly1, lx2, ly2] = computeInfiniteLinePoints(
+                const visible = computeVisibleLine(
                   el.x1,
                   el.y1,
                   el.x2,
                   el.y2,
                   dimensions.width / zoom,
-                  dimensions.height / zoom
+                  dimensions.height / zoom,
+                  Boolean(el.isRay),
                 );
+                const [lx1, ly1, lx2, ly2] = visible.points;
+                const lineLabelProps = {
+                  fontSize: globalLabelStyle?.fontSize || 15,
+                  fontFamily: globalLabelStyle?.fontFamily || 'serif',
+                  fontStyle: globalLabelStyle?.fontStyle || 'italic bold',
+                  fill: globalLabelStyle?.color || el.stroke || '#0f172a',
+                  listening: false,
+                };
                 return (
+                  <React.Fragment key={el.id}>
+                  {/* Nhãn tia / đường thẳng (Ox, xy, d...) */}
+                  {el.endLabel?.trim() && (
+                    <KonvaText x={visible.end.x} y={visible.end.y} text={el.endLabel.trim()} {...lineLabelProps} />
+                  )}
+                  {!el.isRay && el.startLabel?.trim() && visible.start && (
+                    <KonvaText x={visible.start.x} y={visible.start.y} text={el.startLabel.trim()} {...lineLabelProps} />
+                  )}
                   <KonvaLine
                     key={el.id}
                     id={el.id}
@@ -1906,6 +1927,7 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       onElementsChange(updated);
                     }}
                   />
+                  </React.Fragment>
                 );
               }
 

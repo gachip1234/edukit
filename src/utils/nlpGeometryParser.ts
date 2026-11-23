@@ -5,6 +5,8 @@ import type {
   CircleElement,
   PolygonElement,
   RightAngleElement,
+  LineElement,
+  AngleElement,
 } from '../types/geometry';
 import { getCanvasOrigin, mathToScreen } from './coordinateSystem';
 import { distance } from './mathUtils';
@@ -871,6 +873,90 @@ export function parseVietnameseGeometry(
       message: `Đã vẽ tam giác ${A}${B}${C}!`,
       newElements: [...existingElements, ...newElements],
     };
+  }
+
+  // -------------------------------------------------------------
+  // 11b. TIA, GÓC xOy, ĐƯỜNG THẲNG (có nhãn chữ thường)
+  // "vẽ tia Ox", "vẽ góc xOy = 60 độ", "vẽ đường thẳng d", "vẽ đường thẳng xy", "vẽ đường thẳng AB"
+  // -------------------------------------------------------------
+  {
+    const raw = prompt.trim();
+    const findPoint = (label: string) =>
+      existingElements.find((el) => el.type === 'point' && (el as PointElement).label === label) as PointElement | undefined;
+    const makePoint = (label: string, mx: number, my: number): PointElement => {
+      const sp = mathToScreen(mx, my, origin);
+      return {
+        id: `pt-${label}-${now}-${Math.random().toString(36).slice(2, 6)}`,
+        type: 'point', x: sp.x, y: sp.y, radius: 4.5, label,
+        stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid',
+      };
+    };
+    const makeLine = (a: { x: number; y: number }, b: { x: number; y: number }, extra: Partial<LineElement>): LineElement => ({
+      id: `line-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      type: 'line', x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+      stroke: '#2563eb', strokeWidth: 2, strokeStyle: 'solid', ...extra,
+    });
+    const dirPoint = (p: { x: number; y: number }, deg: number) => ({
+      x: p.x + 100 * Math.cos((deg * Math.PI) / 180),
+      y: p.y - 100 * Math.sin((deg * Math.PI) / 180),
+    });
+
+    // Góc xOy = 60 độ (hoặc "bằng 60°")
+    const angleMatch = raw.match(/góc\s+([a-z])([A-Z])([a-z])\s*(?:=|bằng|có số đo)?\s*(\d+(?:[.,]\d+)?)\s*(?:°|độ|o)?/i);
+    if (angleMatch && /góc/i.test(raw)) {
+      const [, l1, vName, l2, degRaw] = angleMatch;
+      const deg = parseFloat(degRaw.replace(',', '.'));
+      if (deg > 0 && deg < 360) {
+        const existing = findPoint(vName);
+        const vertex = existing ?? makePoint(vName, -2, -1.5);
+        const arm1 = dirPoint(vertex, 0);
+        const arm2 = dirPoint(vertex, deg);
+        const angleEl: AngleElement = {
+          id: `angle-${now}`,
+          type: Math.abs(deg - 90) < 0.01 ? 'right_angle' : 'angle',
+          vx: vertex.x, vy: vertex.y, p1x: arm1.x, p1y: arm1.y, p2x: arm2.x, p2y: arm2.y,
+          size: 28, arcType: 'single', stroke: '#dc2626', strokeWidth: 1.5, strokeStyle: 'solid',
+        };
+        const created: GeoElement[] = [
+          ...(existing ? [] : [vertex]),
+          makeLine(vertex, arm1, { isRay: true, endLabel: l1 }),
+          makeLine(vertex, arm2, { isRay: true, endLabel: l2 }),
+          angleEl,
+        ];
+        return { success: true, message: `Đã vẽ góc ${l1}${vName}${l2} = ${deg}°!`, newElements: [...existingElements, ...created] };
+      }
+    }
+
+    // Tia Ox
+    const rayMatch = raw.match(/tia\s+([A-Z])([a-z])(?![A-Za-z])/);
+    if (rayMatch) {
+      const [, vName, label] = rayMatch;
+      const existing = findPoint(vName);
+      const vertex = existing ?? makePoint(vName, -3, 0);
+      const created: GeoElement[] = [...(existing ? [] : [vertex]), makeLine(vertex, dirPoint(vertex, 0), { isRay: true, endLabel: label })];
+      return { success: true, message: `Đã vẽ tia ${vName}${label}!`, newElements: [...existingElements, ...created] };
+    }
+
+    // Đường thẳng AB (qua 2 điểm có tên) / đường thẳng xy / đường thẳng d
+    const lineMatch = raw.match(/đường thẳng\s+(?:([A-Z])([A-Z])|([a-z])([a-z])?)(?![A-Za-z])/);
+    if (lineMatch) {
+      if (lineMatch[1]) {
+        const [, aName, bName] = lineMatch;
+        const a = findPoint(aName) ?? makePoint(aName, -2, -1);
+        const b = findPoint(bName) ?? makePoint(bName, 2, 1);
+        const created: GeoElement[] = [
+          ...(findPoint(aName) ? [] : [a]),
+          ...(findPoint(bName) ? [] : [b]),
+          makeLine(a, b, {}),
+        ];
+        return { success: true, message: `Đã vẽ đường thẳng ${aName}${bName}!`, newElements: [...existingElements, ...created] };
+      }
+      const [l1, l2] = [lineMatch[3], lineMatch[4]];
+      const a = mathToScreen(-3, -1, origin);
+      const b = mathToScreen(3, -1, origin);
+      const line = makeLine(a, b, l2 ? { startLabel: l1, endLabel: l2 } : { endLabel: l1 });
+      return { success: true, message: `Đã vẽ đường thẳng ${l2 ? l1 + l2 : l1}!`, newElements: [...existingElements, line] };
+    }
   }
 
   // -------------------------------------------------------------

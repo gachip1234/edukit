@@ -87,7 +87,7 @@ export const FloatingPropertyBar: React.FC<FloatingPropertyBarProps> = ({
       <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1 border-r border-slate-200 pr-2">
         {selectedElement.type === 'point' && 'Điểm'}
         {selectedElement.type === 'segment' && 'Đoạn thẳng'}
-        {selectedElement.type === 'line' && 'Đường thẳng'}
+        {selectedElement.type === 'line' && (selectedElement.isRay ? 'Tia' : 'Đường thẳng')}
         {selectedElement.type === 'circle' && 'Đường tròn'}
         {selectedElement.type === 'polygon' && 'Đa giác'}
         {(selectedElement.type === 'angle' || selectedElement.type === 'right_angle') && 'Ký hiệu góc'}
@@ -143,6 +143,40 @@ export const FloatingPropertyBar: React.FC<FloatingPropertyBarProps> = ({
               <option value="double_tick">2 Vạch gạch</option>
             </select>
           </div>
+        </div>
+      )}
+
+      {/* Nhãn của tia / đường thẳng: tia Ox → "x"; đường thẳng xy → "x", "y"; đường thẳng d → "d" */}
+      {selectedElement.type === 'line' && (
+        <div className="flex items-center gap-1.5 border-r border-slate-200 pr-2">
+          <span className="text-xs font-medium text-slate-500">Nhãn:</span>
+          {!selectedElement.isRay && (
+            <input
+              type="text"
+              maxLength={3}
+              value={selectedElement.startLabel || ''}
+              onChange={(e) => onUpdateElement({ startLabel: e.target.value } as Partial<GeoElement>)}
+              placeholder="x"
+              className="w-8 px-1 py-0.5 text-xs font-bold italic font-serif text-center border border-slate-300 rounded bg-slate-50 focus:bg-white focus:outline-blue-500"
+              title="Nhãn ở đầu thứ nhất của đường thẳng (vd: x trong đường thẳng xy). Để trống nếu chỉ cần một nhãn."
+            />
+          )}
+          <input
+            type="text"
+            maxLength={3}
+            value={selectedElement.endLabel || ''}
+            onChange={(e) => onUpdateElement({ endLabel: e.target.value } as Partial<GeoElement>)}
+            placeholder={selectedElement.isRay ? 'x' : 'd'}
+            className="w-8 px-1 py-0.5 text-xs font-bold italic font-serif text-center border border-slate-300 rounded bg-slate-50 focus:bg-white focus:outline-blue-500"
+            title={selectedElement.isRay ? 'Nhãn tia (vd: x trong tia Ox)' : 'Nhãn đường thẳng (vd: d, hoặc y trong đường thẳng xy)'}
+          />
+          <button
+            onClick={() => onUpdateElement({ isRay: !selectedElement.isRay } as Partial<GeoElement>)}
+            className="px-1.5 py-0.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100"
+            title="Chuyển giữa đường thẳng và tia"
+          >
+            {selectedElement.isRay ? '→ Đường thẳng' : '→ Tia'}
+          </button>
         </div>
       )}
 
