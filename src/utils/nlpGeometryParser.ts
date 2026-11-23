@@ -327,6 +327,59 @@ export function parseVietnameseGeometry(
   }
 
   // -------------------------------------------------------------
+  // 0b. CÁT TUYẾN: "vẽ cát tuyến xy cắt đường tròn (O) tại (2 điểm) P, Q"
+  //     (dùng đường tròn tâm O đã có trên bảng; chưa có thì vẽ đường tròn tâm O bán kính 3)
+  // -------------------------------------------------------------
+  {
+    const secMatch = prompt.match(
+      /cát tuyến\s+([a-z])([a-z])?\s+cắt\s+(?:đường tròn\s*)?\(?\s*([A-Z])'?\s*(?:;[^)]*)?\)?\s+tại\s+(?:hai điểm\s+|2 điểm\s+)?([A-Z])\s*(?:,|và)\s*([A-Z])/,
+    );
+    if (secMatch) {
+      const [, l1, l2, cName, pName, qName] = secMatch;
+      const created: GeoElement[] = [];
+      let centerPt = existingElements.find((el) => el.type === 'point' && (el as PointElement).label === cName) as PointElement | undefined;
+      let circle = centerPt
+        ? (existingElements.find((el) => el.type === 'circle' && Math.hypot(el.cx - centerPt!.x, el.cy - centerPt!.y) < 4) as CircleElement | undefined)
+        : undefined;
+      if (!centerPt) {
+        const sp = mathToScreen(0, 0, origin);
+        centerPt = { id: `pt-${cName}-${now}`, type: 'point', x: sp.x, y: sp.y, radius: 4.5, label: cName, stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' };
+        created.push(centerPt);
+      }
+      if (!circle) {
+        circle = { id: `circle-${now}`, type: 'circle', cx: centerPt.x, cy: centerPt.y, radius: 150, fill: 'transparent', stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid' };
+        created.push(circle);
+      }
+      // Cát tuyến nghiêng 15°, cách tâm 0.45R (vị trí tổng quát, không đi qua tâm). Tọa độ màn hình: y hướng xuống.
+      const R = circle.radius;
+      const th = (15 * Math.PI) / 180;
+      const ux = Math.cos(th);
+      const uy = -Math.sin(th);
+      // Trung điểm dây cung: từ tâm đi 0.45R theo pháp tuyến (−sin, −cos) — vuông góc với hướng cát tuyến (cos, −sin)
+      const mx = circle.cx - Math.sin(th) * 0.45 * R;
+      const my = circle.cy - Math.cos(th) * 0.45 * R;
+      const half = Math.sqrt(R * R - (0.45 * R) ** 2);
+      const p1 = { x: mx - ux * half, y: my - uy * half };
+      const p2 = { x: mx + ux * half, y: my + uy * half };
+      const mk = (label: string, p: { x: number; y: number }): PointElement => ({
+        id: `pt-${label}-${now}-${Math.random().toString(36).slice(2, 6)}`, type: 'point', x: p.x, y: p.y, radius: 4.5, label,
+        stroke: '#0f172a', strokeWidth: 2, strokeStyle: 'solid',
+      });
+      const line: LineElement = {
+        id: `line-${now}`, type: 'line', x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+        ...(l2 ? { startLabel: l1, endLabel: l2 } : { endLabel: l1 }),
+        stroke: '#2563eb', strokeWidth: 2, strokeStyle: 'solid',
+      };
+      created.push(line, mk(pName, p1), mk(qName, p2));
+      return {
+        success: true,
+        message: `Đã vẽ cát tuyến ${l1}${l2 || ''} cắt đường tròn (${cName}) tại ${pName}, ${qName}!`,
+        newElements: [...existingElements, ...created],
+      };
+    }
+  }
+
+  // -------------------------------------------------------------
   // 1. TÔ MÀU (Coloring / Fill styling)
   // "Tô màu tam giác ABC màu xanh nhạt"
   // "Đổi màu tam giác ABC thành màu đỏ"

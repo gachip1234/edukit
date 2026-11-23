@@ -135,6 +135,14 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
+      // 2a1. SECANT(O, x, y, P, Q) / SECANT_FROM(M, O, A, B) / LINE_CIRCLE(A, B, O, P, Q): cát tuyến, giao đường thẳng – đường tròn
+      const secantCmd = trimmed.match(/^(SECANT_FROM|SECANT|LINE_CIRCLE|CatTuyen)\s*\(([^)]*)\)/i);
+      if (secantCmd) {
+        const kind = secantCmd[1].toUpperCase();
+        result.push({ cmd: kind === 'CATTUYEN' ? 'SECANT' : kind, args: secantCmd[2].split(',').map((a) => a.trim()).filter(Boolean) });
+        continue;
+      }
+
       // 2a2. EQUAL_SEGMENTS(A, B, A, C) / EQUAL_ANGLES(B, A, D, D, A, C): ký hiệu bằng nhau
       const equalCmd = trimmed.match(/^(EQUAL_SEGMENTS|EQUAL_ANGLES|BangNhau|GocBangNhau)\s*\(([^)]*)\)/i);
       if (equalCmd) {
@@ -325,6 +333,11 @@ function autoPlaceMissingBasePoints(
       case 'DIAMETER':
         derived.add(String(c.otherEnd || 'C').trim());
         break;
+      case 'SECANT':
+      case 'SECANT_FROM':
+      case 'LINE_CIRCLE':
+        secantArgs(c).outs.forEach((n) => derived.add(n));
+        break;
       case 'RAY_OPPOSITE': {
         const third = oppositeArgs(c)[2];
         if (third && /^[A-Z]/.test(third)) derived.add(third);
@@ -424,6 +437,22 @@ function autoPlaceMissingBasePoints(
   return missing;
 }
 
+/**
+ * Tham số lệnh cát tuyến, chuẩn hóa thành { circle, labels, outs, from?, via? }:
+ *  - SECANT(O, x, y, P, Q) | SECANT(O, d, P, Q) | SECANT(O, P, Q): cát tuyến (nhãn x, y / d) cắt (O) tại P, Q
+ *  - SECANT_FROM(M, O, A, B): từ M kẻ cát tuyến MAB (A gần M, B xa M)
+ *  - LINE_CIRCLE(A, B, O, P, Q): giao của đường thẳng AB với (O) là P, Q
+ */
+function secantArgs(c: ConstructionCommand): { circle: string; labels: string[]; outs: string[]; from?: string; via?: string } {
+  const a: string[] = (Array.isArray(c.args) ? c.args : []).map((v: unknown) => String(v ?? '').trim()).filter(Boolean);
+  if (c.cmd === 'SECANT_FROM') return { from: a[0], circle: a[1] || '', labels: [], outs: a.slice(2, 4) };
+  if (c.cmd === 'LINE_CIRCLE') return { from: a[0], via: a[1], circle: a[2] || '', labels: [], outs: a.slice(3, 5) };
+  const rest = a.slice(1);
+  const labels = rest.filter((v) => /^[a-z]/.test(v)).slice(0, 2);
+  const outs = rest.filter((v) => /^[A-Z]/.test(v)).slice(0, 2);
+  return { circle: a[0] || '', labels, outs };
+}
+
 /** Tham số của lệnh tia đối: [gốc, điểm thuộc tia ban đầu, nhãn (chữ thường) hoặc tên điểm mới (chữ hoa)] */
 function oppositeArgs(c: ConstructionCommand): string[] {
   const a = Array.isArray(c.args) ? c.args : [c.from, c.of ?? c.away ?? toNameList(c.to)[0], c.label ?? c.name];
@@ -445,6 +474,12 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
     case 'RAY':
     case 'LINE':
       return { inputs: Array.isArray(c.args) ? c.args.slice(0, 2) : [...one(c.from), ...one(c.through)], outputs: [] };
+    case 'SECANT':
+    case 'SECANT_FROM':
+    case 'LINE_CIRCLE': {
+      const sa = secantArgs(c);
+      return { inputs: [sa.from, sa.via].filter(Boolean) as string[], outputs: sa.outs };
+    }
     case 'EQUAL_SEGMENTS':
     case 'EQUAL_ANGLES':
       return { inputs: (Array.isArray(c.args) ? c.args : []).flatMap((a: string) => toNameList(a)), outputs: [] };
@@ -1066,6 +1101,76 @@ export function executeConstructionCommands(
             dashed: Boolean(cmd.dashed),
           });
           executedLog.push(`${isRay ? 'Tia' : 'Đường thẳng'} ${from}${l1 || ''} (góc ${deg}°)`);
+        }
+        break;
+      }
+
+      case 'SECANT':
+      case 'SECANT_FROM':
+      case 'LINE_CIRCLE': {
+        const sa = secantArgs(cmd);
+        const circ = circles.get(sa.circle) || Array.from(circles.values()).find((cc) => cc.center === sa.circle);
+        const center = circ ? getPt(circ.center) : undefined;
+        if (!circ || !center) break;
+        const R = circ.r;
+        // Giao điểm của đường thẳng qua p theo hướng (ux, uy) với đường tròn, sắp theo tham số t tăng dần
+        const hits = (px: number, py: number, ux: number, uy: number) => {
+          const fx = px - center.x;
+          const fy = py - center.y;
+          const b = fx * ux + fy * uy;
+          const cc = fx * fx + fy * fy - R * R;
+          const disc = b * b - cc;
+          if (disc < 0) return [] as { x: number; y: number }[];
+          const sq = Math.sqrt(disc);
+          return [-b - sq, -b + sq].map((t) => ({ x: px + t * ux, y: py + t * uy }));
+        };
+        const setPt = (name: string | undefined, p: { x: number; y: number } | undefined) => {
+          if (name && p && !getPt(name)) points.set(name, { name, x: Math.round(p.x * 1000) / 1000, y: Math.round(p.y * 1000) / 1000 });
+        };
+        if (cmd.cmd === 'SECANT') {
+          // Cát tuyến vẽ ở vị trí tổng quát: nghiêng 15°, cách tâm 0.45R (không đi qua tâm)
+          const th = (15 * Math.PI) / 180;
+          const ux = Math.cos(th);
+          const uy = Math.sin(th);
+          const mx = center.x - uy * 0.45 * R;
+          const my = center.y + ux * 0.45 * R;
+          const [p1, p2] = hits(mx, my, ux, uy);
+          const [nP, nQ] = sa.outs;
+          setPt(nP, p1);
+          setPt(nQ, p2);
+          const from = nP || addHelper(p1.x, p1.y);
+          const through = nQ || addHelper(p2.x, p2.y);
+          lineObjs.push({
+            from,
+            through,
+            isRay: false,
+            startLabel: sa.labels.length === 2 ? sa.labels[0] : undefined,
+            endLabel: sa.labels.length === 2 ? sa.labels[1] : sa.labels[0],
+          });
+          executedLog.push(`Cát tuyến ${sa.labels.join('') || ''} cắt (${circ.center}) tại ${sa.outs.join(', ')}`);
+        } else if (cmd.cmd === 'SECANT_FROM') {
+          const m = getPt(sa.from || '');
+          if (!m) break;
+          // Hướng từ M về tâm, lệch 12° để cát tuyến không đi qua tâm
+          const base = Math.atan2(center.y - m.y, center.x - m.x) + (12 * Math.PI) / 180;
+          const ux = Math.cos(base);
+          const uy = Math.sin(base);
+          const pts = hits(m.x, m.y, ux, uy);
+          if (pts.length < 2) break;
+          const [nA, nB] = sa.outs;
+          setPt(nA, pts[0]); // gần M
+          setPt(nB, pts[1]); // xa M
+          if (sa.from && nB) addSegment(sa.from, nB);
+          executedLog.push(`Cát tuyến ${sa.from}${nA}${nB} với (${circ.center})`);
+        } else {
+          const a = getPt(sa.from || '');
+          const v = getPt(sa.via || '');
+          if (!a || !v) break;
+          const len = Math.hypot(v.x - a.x, v.y - a.y) || 1;
+          const pts = hits(a.x, a.y, (v.x - a.x) / len, (v.y - a.y) / len);
+          setPt(sa.outs[0], pts[0]);
+          setPt(sa.outs[1], pts[1]);
+          executedLog.push(`Giao của ${sa.from}${sa.via} với (${circ.center}): ${sa.outs.join(', ')}`);
         }
         break;
       }

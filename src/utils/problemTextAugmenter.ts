@@ -108,6 +108,9 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       if (typeof c === 'string') {
         const m = c.match(/^\s*(MIDPOINT|PERPENDICULAR|INTERSECT|BISECTOR|TrungDiem|DuongCao|PhanGiac)\s*\(([^)]*)\)/i);
         if (m) produced = m[2].split(',').pop()?.trim() || '';
+        // Lệnh cát tuyến tạo 2 điểm cuối (P, Q / A, B)
+        const sec = c.match(/^\s*(SECANT_FROM|SECANT|LINE_CIRCLE|CatTuyen)\s*\(([^)]*)\)/i);
+        if (sec && sec[2].split(',').map((a: string) => a.trim()).slice(-2).includes(name)) produced = name;
       } else if (c && typeof c === 'object' && ['MIDPOINT', 'PERPENDICULAR', 'INTERSECT', 'BISECTOR'].includes(String(c.cmd || '').toUpperCase())) {
         produced = String(c.foot || c.name || '').trim();
       }
@@ -371,6 +374,41 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       if (/^[A-Z]/.test(label)) defined.add(label);
       added.push(`Tia ${origin}${label} là tia đối của tia ${origin}${away}`);
     }
+  }
+
+  // ---- 8b. Cát tuyến ----
+  // "cát tuyến xy cắt đường tròn (O) tại (hai điểm) P và Q", "cát tuyến d cắt (O) tại P, Q"
+  // "từ M kẻ cát tuyến MAB với (O)" / "cát tuyến MCD của đường tròn (O)"
+  const circleCenters = new Set(
+    (Array.isArray(data.circles) ? data.circles : []).map((c: any) => String(c?.center || '').trim()),
+  );
+  const CIRCLE_REF = `(?:đường tròn\\s*)?\\(?\\s*(${NAME})\\s*(?:;[^)]*)?\\)?`;
+  for (const m of text.matchAll(
+    new RegExp(
+      `cát tuyến\\s+([a-z])([a-z])?\\s+cắt\\s+${CIRCLE_REF}\\s+tại\\s+(?:hai điểm\\s+|2 điểm\\s+)?(${NAME})\\s*(?:,|và)\\s*(${NAME})`,
+      'g',
+    ),
+  )) {
+    const [, l1, l2, center, nP, nQ] = m;
+    if (!circleCenters.has(center) || isBase(nP) || isBase(nQ)) continue;
+    dropAiProducers(nP);
+    dropAiProducers(nQ);
+    commands.push({ cmd: 'SECANT', args: [center, l1, ...(l2 ? [l2] : []), nP, nQ] });
+    defined.add(nP);
+    defined.add(nQ);
+    added.push(`Cát tuyến ${l1}${l2 || ''} cắt (${center}) tại ${nP}, ${nQ}`);
+  }
+  for (const m of text.matchAll(
+    new RegExp(`cát tuyến\\s+(${NAME})(${NAME})(${NAME})\\s+(?:với|tới|đến|của|cắt)?\\s*${CIRCLE_REF}`, 'g'),
+  )) {
+    const [, nM, nA, nB, center] = m;
+    if (!has(nM) || !circleCenters.has(center) || isBase(nA) || isBase(nB)) continue;
+    dropAiProducers(nA);
+    dropAiProducers(nB);
+    commands.push({ cmd: 'SECANT_FROM', args: [nM, center, nA, nB] });
+    defined.add(nA);
+    defined.add(nB);
+    added.push(`Cát tuyến ${nM}${nA}${nB} với (${center})`);
   }
 
   // ---- 9. Ký hiệu bằng nhau nêu trong đề ----

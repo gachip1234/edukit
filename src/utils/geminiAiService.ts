@@ -177,6 +177,9 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
    - "SEGMENT(A, M)" / "SEGMENT_DASHED(A, M)" → đoạn thẳng AM (nét liền / nét đứt)
    - "RAY(O, A, x)"                → tia gốc O đi qua điểm A, ghi nhãn x ở đầu tia (tia Ox). Nhãn có thể bỏ: "RAY(O, A)"
    - "RAY_ANGLE(O, 60, y)"         → tia Oy gốc O tạo góc 60° với chiều dương trục hoành (đo ngược chiều kim đồng hồ)
+   - "SECANT(O, x, y, P, Q)"       → cát tuyến xy cắt đường tròn tâm O tại P, Q (tự chọn vị trí cát tuyến, tự tính P, Q). "SECANT(O, d, P, Q)" → cát tuyến d
+   - "SECANT_FROM(M, O, A, B)"     → từ M kẻ cát tuyến MAB với (O): A là giao điểm gần M, B xa M (tự vẽ đoạn MB)
+   - "LINE_CIRCLE(A, B, O, P, Q)"  → P, Q là giao điểm của đường thẳng AB với đường tròn tâm O
    - "EQUAL_SEGMENTS(A, B, A, C)"  → ký hiệu AB = AC (gạch nhỏ trên hai đoạn). Có thể nhiều đoạn: "EQUAL_SEGMENTS(M, A, M, B, M, C)"
    - "EQUAL_ANGLES(B, A, D, D, A, C)" → ký hiệu góc BAD = góc DAC (cung tròn). (MIDPOINT và BISECTOR đã TỰ có ký hiệu, không cần thêm)
    - "RAY_OPPOSITE(B, C, x)"       → tia Bx là TIA ĐỐI của tia BC (gốc B, hướng NGƯỢC với C). "RAY_OPPOSITE(B, C, D)" → tia BD đối với tia BC (D là điểm mới trên tia đối)
