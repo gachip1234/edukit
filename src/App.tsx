@@ -583,24 +583,27 @@ export const App: React.FC = () => {
       const width = stage ? stage.width() : window.innerWidth;
       const height = stage ? stage.height() : window.innerHeight;
 
-      // 1. NẾU CHỌN CHẾ ĐỘ THUẦN JS (OFFLINE):
-      // Dùng Regex và Bộ giải hình học Sư phạm THCS/THPT chạy trực tiếp trên trình duyệt
-      if (mode === "offline") {
-        if (isSimpleSingleObjectCommand(prompt)) {
-          const regexRes = parseVietnameseGeometry(prompt, elements, width, height);
-          if (regexRes.success) {
-            const newCount = regexRes.updatedElements?.length || regexRes.newElements?.length || 0;
-            if (regexRes.updatedElements) {
-              updateElementsWithHistory(regexRes.updatedElements);
-            } else if (regexRes.newElements) {
-              updateElementsWithHistory(regexRes.newElements);
-            }
-            showToast(regexRes.message, "success");
-            if (!showAxes) setShowAxes(true);
-            return { success: true, message: regexRes.message, elementCount: newCount };
+      // 0. LỆNH VẼ ĐƠN GIẢN (vd: "vẽ tam giác ABC", "vẽ đường tròn tâm O"):
+      // Luôn vẽ ngay bằng bộ phân tích tiếng Việt có sẵn ở CẢ HAI chế độ —
+      // nhanh, chính xác, không cần API Key và không tốn lượt gọi Gemini.
+      if (isSimpleSingleObjectCommand(prompt)) {
+        const regexRes = parseVietnameseGeometry(prompt, elements, width, height);
+        if (regexRes.success) {
+          const newCount = regexRes.updatedElements?.length || regexRes.newElements?.length || 0;
+          if (regexRes.updatedElements) {
+            updateElementsWithHistory(regexRes.updatedElements);
+          } else if (regexRes.newElements) {
+            updateElementsWithHistory(regexRes.newElements);
           }
+          showToast(regexRes.message, "success");
+          if (!showAxes) setShowAxes(true);
+          return { success: true, message: regexRes.message, elementCount: newCount };
         }
+      }
 
+      // 1. NẾU CHỌN CHẾ ĐỘ THUẦN JS (OFFLINE):
+      // Dùng Bộ giải hình học Sư phạm THCS/THPT chạy trực tiếp trên trình duyệt
+      if (mode === "offline") {
         const classicRes = solveClassicGeometry(prompt, elements, width, height);
         if (classicRes && classicRes.success) {
           const newCount = classicRes.newElements?.length || classicRes.updatedElements?.length || 0;
