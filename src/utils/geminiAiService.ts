@@ -1,4 +1,5 @@
 import type { GeoElement } from '../types/geometry';
+import { augmentWithProblemText } from './problemTextAugmenter';
 import {
   executeConstructionCommands,
   type ConstructionCommand,
@@ -172,7 +173,9 @@ QUY TẮC BẮT BUỘC:
   Chỉ được bỏ qua các điểm do "commands" tự tính ra (chân đường cao "foot", trung điểm, giao điểm, tiếp điểm, đầu kia đường kính).
 - Chọn tọa độ đúng với giả thiết đề bài (vuông tại A, cân tại A, độ dài cạnh, điểm nằm trên đường tròn...) và có dáng tổng quát, dễ nhìn.
 - Điểm nằm trên đường tròn tâm O bán kính R phải có khoảng cách tới O đúng bằng R.
-- Ưu tiên dùng "commands" (PERPENDICULAR, MIDPOINT, INTERSECT, TANGENTS...) cho các điểm suy ra để vẽ chính xác tuyệt đối.
+- MỖI yếu tố đề bài nêu ra PHẢI có lệnh tương ứng trong "commands" (không được chỉ nhắc trong "reasoning"):
+  đường cao → PERPENDICULAR; trung điểm → MIDPOINT; giao điểm / "cắt nhau tại" / "đồng quy tại" → INTERSECT;
+  tiếp tuyến → TANGENTS; đường kính → DIAMETER. Trước khi trả lời, đối chiếu lại đề bài để không bỏ sót yếu tố nào.
 
 VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. Gọi M là trung điểm BC."
 {
@@ -189,6 +192,27 @@ VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. G�
   "polygons": [{"vertices": ["A", "B", "C"]}],
   "segments": [{"from": "A", "to": "M", "dashed": true}],
   "explanation": "Tam giác ABC nhọn với đường cao AH và trung điểm M của BC."
+}
+
+VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O). Các đường cao AD, BE, CF cắt nhau tại H."
+{
+  "reasoning": "A, B, C nằm trên đường tròn tâm O bán kính 4 (tọa độ 4cos, 4sin). Ba đường cao dựng bằng PERPENDICULAR, trực tâm H là giao của AD và BE.",
+  "points": [
+    {"name": "O", "x": 0, "y": 0},
+    {"name": "A", "x": 1.035, "y": 3.864},
+    {"name": "B", "x": -3.759, "y": -1.368},
+    {"name": "C", "x": 3.464, "y": -2}
+  ],
+  "circles": [{"name": "c1", "center": "O", "r": 4}],
+  "commands": [
+    {"cmd": "PERPENDICULAR", "from": "A", "to": ["B", "C"], "foot": "D"},
+    {"cmd": "PERPENDICULAR", "from": "B", "to": ["A", "C"], "foot": "E"},
+    {"cmd": "PERPENDICULAR", "from": "C", "to": ["A", "B"], "foot": "F"},
+    {"cmd": "INTERSECT", "obj1": ["A", "D"], "obj2": ["B", "E"], "name": "H"}
+  ],
+  "polygons": [{"vertices": ["A", "B", "C"]}],
+  "segments": [],
+  "explanation": "Tam giác ABC nhọn nội tiếp (O), ba đường cao AD, BE, CF đồng quy tại trực tâm H."
 }
 `;
 
@@ -316,7 +340,7 @@ VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. G�
             },
           },
         },
-        required: ['reasoning', 'points', 'explanation'],
+        required: ['reasoning', 'points', 'commands', 'explanation'],
       },
     };
 
@@ -444,6 +468,13 @@ VÍ DỤ ĐẦY ĐỦ — Đề: "Cho tam giác ABC nhọn, đường cao AH. G�
     }
 
     // Dựng hình giải tích & Auto-fit trên canvas từ toàn bộ cấu trúc AI trả về (points, circles, segments, commands)
+    // Bổ sung các lệnh dựng hình AI bỏ sót (đường cao, trung điểm, giao điểm...) dựa trên đề bài
+    const augmented = augmentWithProblemText(parsed, prompt);
+    if (augmented.added.length > 0) {
+      console.info('[EduKit] Bổ sung lệnh dựng hình từ đề bài:', augmented.added);
+      parsed = augmented.data;
+    }
+
     const constructRes = executeConstructionCommands(
       parsed,
       canvasWidth,
