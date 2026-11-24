@@ -961,6 +961,10 @@ export const App: React.FC = () => {
         onClearChat={() => {
           chatHistoryRef.current = [];
         }}
+        canUndo={toolbarProps.canUndo}
+        canRedo={toolbarProps.canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
 
       {/* Hidden file input for opening saved project sessions */}

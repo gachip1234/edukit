@@ -242,6 +242,8 @@ export const MobileToolbar: React.FC<ToolbarProps> = ({
   };
 
   const btnBase = 'shrink-0 flex flex-col items-center justify-center w-10 h-11 rounded-xl transition-all duration-150';
+  // Hoàn tác / Làm lại có chữ bên dưới để dễ nhận ra trên điện thoại
+  const undoBtn = 'shrink-0 flex flex-col items-center justify-center w-12 h-11 rounded-xl transition-all duration-150';
 
   return (
     <div className="md:hidden short:hidden relative z-20 shrink-0 select-none">
@@ -350,18 +352,20 @@ export const MobileToolbar: React.FC<ToolbarProps> = ({
             disabled={!canUndo}
             title="Hoàn tác thao tác vừa vẽ"
             aria-label="Hoàn tác"
-            className={`${btnBase} ${canUndo ? 'text-slate-800 active:bg-slate-100 active:scale-95' : 'text-slate-300'}`}
+            className={`${undoBtn} ${canUndo ? 'text-blue-700 bg-blue-50 active:bg-blue-100 active:scale-95' : 'text-slate-400'}`}
           >
             <RotateCcw className="w-5 h-5" />
+            <span className="text-[9px] font-semibold leading-none mt-0.5">Hoàn tác</span>
           </button>
           <button
             onClick={onRedo}
             disabled={!canRedo}
             title="Làm lại"
             aria-label="Làm lại"
-            className={`${btnBase} ${canRedo ? 'text-slate-800 active:bg-slate-100 active:scale-95' : 'text-slate-300'}`}
+            className={`${undoBtn} ${canRedo ? 'text-slate-800 active:bg-slate-100 active:scale-95' : 'text-slate-400'}`}
           >
             <RotateCw className="w-5 h-5" />
+            <span className="text-[9px] font-semibold leading-none mt-0.5">Làm lại</span>
           </button>
         </div>
       </nav>
