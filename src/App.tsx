@@ -849,7 +849,12 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col w-screen h-screen h-dvh overflow-hidden font-sans">
+    <div
+      className="flex flex-col w-full overflow-hidden font-sans"
+      // Chiều cao đo bằng JS (xem main.tsx): một số trình duyệt điện thoại (Zalo, WebView cũ)
+      // tính 100vh cao hơn phần nhìn thấy → thanh công cụ dưới đáy bị đẩy khuất
+      style={{ height: "var(--app-h, 100%)" }}
+    >
       {/* Top Header Bar */}
       <HeaderBar
         showGrid={showGrid}
