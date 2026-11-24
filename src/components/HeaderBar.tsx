@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Grid,
   Magnet,
@@ -11,9 +11,12 @@ import {
   Sparkles,
   Sun,
   Moon,
+  Monitor,
   Type,
   Save,
   FolderOpen,
+  MoreHorizontal,
+  Check,
 } from 'lucide-react';
 
 interface HeaderBarProps {
@@ -44,6 +47,52 @@ interface HeaderBarProps {
   themeIsDark?: boolean;
 }
 
+const THEME_LABEL = {
+  light: 'Sáng',
+  dark: 'Tối',
+  system: 'Tự động',
+} as const;
+
+/** Một dòng trong menu "Thêm" */
+const MenuItem: React.FC<{
+  icon: React.ReactNode;
+  label: string;
+  hint?: string;
+  onClick: () => void;
+  checked?: boolean;
+  disabled?: boolean;
+}> = ({ icon, label, hint, onClick, checked, disabled }) => (
+  <button
+    onClick={onClick}
+    disabled={disabled}
+    role={checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+    aria-checked={checked}
+    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-left transition-colors ${
+      disabled ? 'text-slate-300 cursor-not-allowed' : 'text-slate-700 hover:bg-slate-100 active:bg-slate-100'
+    }`}
+  >
+    <span className="w-5 flex justify-center shrink-0">{icon}</span>
+    <span className="flex-1 min-w-0 truncate">{label}</span>
+    {hint && <span className="text-xs text-slate-400 shrink-0">{hint}</span>}
+    {checked !== undefined && (
+      <span
+        className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+          checked ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300'
+        }`}
+      >
+        {checked && <Check className="w-3.5 h-3.5" strokeWidth={3} />}
+      </span>
+    )}
+  </button>
+);
+
+const MenuSection: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <div className="py-1">
+    <div className="px-3 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400">{title}</div>
+    {children}
+  </div>
+);
+
 export const HeaderBar: React.FC<HeaderBarProps> = ({
   showGrid,
   onToggleGrid,
@@ -69,15 +118,53 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
   onCycleTheme,
   themeIsDark = false,
 }) => {
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Esc đóng menu
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
+  /** Bấm một mục rồi đóng menu (dùng cho các thao tác một lần như mở/lưu file, tải ảnh) */
+  const run = (fn?: () => void) => () => {
+    setMenuOpen(false);
+    fn?.();
+  };
+
+  const themeIcon = themeIsDark ? (
+    <Moon className="w-[18px] h-[18px] text-indigo-400" />
+  ) : (
+    <Sun className="w-[18px] h-[18px] text-amber-500" />
+  );
+
+  const zoomControls = (
+    <div className="flex items-center gap-1 shrink-0 bg-slate-50 border border-slate-200 px-1.5 py-1 rounded-xl">
+      <button onClick={onZoomOut} title="Thu nhỏ" aria-label="Thu nhỏ" className="p-1 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+        <ZoomOut className="w-4 h-4" />
+      </button>
+      <button onClick={onResetZoom} title="Đặt lại tỉ lệ 100%" className="min-w-11 text-xs font-semibold text-slate-700 px-1 hover:text-blue-600">
+        {Math.round(zoom * 100)}%
+      </button>
+      <button onClick={onZoomIn} title="Phóng to" aria-label="Phóng to" className="p-1 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors">
+        <ZoomIn className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
   return (
-    <header className="h-16 short:h-12 bg-white/75 backdrop-blur-xl backdrop-saturate-150 border-b border-slate-200/80 px-2 md:px-4 flex items-center justify-between gap-2 min-[1700px]:gap-1 z-20 shadow-xs select-none">
-      {/* Brand & Title */}
-      <div className="flex items-center gap-2 md:gap-3 shrink-0">
-        <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-          <Shapes className="w-5 h-5" />
+    <header className="relative h-12 md:h-16 short:h-12 bg-white/75 backdrop-blur-xl backdrop-saturate-150 border-b border-slate-200/80 px-2 md:px-4 flex items-center justify-between gap-2 z-40 shadow-xs select-none">
+      {/* Logo & tên */}
+      <div className="flex items-center gap-2 md:gap-3 min-w-0">
+        <div className="w-8 h-8 md:w-10 md:h-10 short:w-8 short:h-8 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <Shapes className="w-4 h-4 md:w-5 md:h-5" />
         </div>
-        <div>
-          <h1 className="text-base font-bold text-slate-800 leading-tight flex items-center gap-2">
+        <div className="min-w-0">
+          <h1 className="text-sm md:text-base font-bold text-slate-800 leading-tight flex items-center gap-2 truncate">
             EduKit<span className="hidden sm:inline">Geometry</span>
             <span className="hidden md:inline short:hidden text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full">
               Toán Học
@@ -87,210 +174,117 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
             Vẽ hình học & Xuất ảnh PNG cho Word, PowerPoint
           </p>
         </div>
-          {/* Chế độ giao diện: Sáng → Tối → Tự động — đặt cạnh logo để luôn nhìn thấy (kể cả trên điện thoại) */}
-          {onCycleTheme && (
-            <button
-              onClick={onCycleTheme}
-              title={
-                themePreference === 'light'
-                  ? 'Giao diện: Sáng (bấm để chuyển sang Tối)'
-                  : themePreference === 'dark'
-                    ? 'Giao diện: Tối (bấm để chuyển sang Tự động theo hệ thống)'
-                    : 'Giao diện: Tự động theo hệ thống (bấm để chuyển sang Sáng)'
-              }
-              aria-label="Đổi chế độ giao diện sáng / tối"
-              className="relative shrink-0 flex items-center justify-center w-9 h-9 rounded-xl text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 transition-colors"
-            >
-              {/* Mặt trời = đang sáng, mặt trăng = đang tối; chữ "A" nhỏ = Tự động theo hệ thống */}
-              {themeIsDark ? (
-                <Moon className="w-[18px] h-[18px] text-indigo-400" />
-              ) : (
-                <Sun className="w-[18px] h-[18px] text-amber-500" />
-              )}
-              {themePreference === 'system' && (
-                <span className="absolute -bottom-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-full bg-slate-600 text-[8px] leading-3.5 font-bold text-white text-center">
-                  A
-                </span>
-              )}
-            </button>
-          )}
-
       </div>
 
-      {/* Các nhóm nút: trên màn hình nhỏ gom thành một dải cuộn ngang; từ 2xl (1536px) trở lên (min-[1700px]:contents) giữ bố cục cũ */}
-      <div className="flex items-center gap-2 min-w-0 overflow-x-auto no-scrollbar min-[1700px]:contents">
-      {/* Grid & Snap Controls */}
-      <div className="flex items-center gap-1.5 shrink-0 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
-        <button
-          onClick={onToggleGrid}
-          title="Bật/Tắt lưới tọa độ"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            showGrid
-              ? 'bg-white text-blue-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Grid className="w-3.5 h-3.5" />
-          <span className="hidden min-[1700px]:inline short:hidden">Lưới ô vuông</span>
-        </button>
+      {/* Các nút luôn hiện: thu phóng (màn hình rộng), sao chép ảnh, trợ lý AI, menu Thêm */}
+      <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+        <div className="hidden lg:flex">{zoomControls}</div>
 
-        <button
-          onClick={onToggleAxes}
-          title="Bật/Tắt hệ trục tọa độ Oxy"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            showAxes
-              ? 'bg-white text-blue-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <span className="text-xs font-serif font-bold italic">Oxy</span>
-          <span className="hidden min-[1700px]:inline short:hidden">Trục tọa độ</span>
-        </button>
-
-        <div className="w-px h-4 bg-slate-300 mx-0.5" />
-
-        <button
-          onClick={onToggleSnap}
-          title="Tự động bắt điểm vào giao điểm lưới"
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-            snapToGrid
-              ? 'bg-white text-emerald-600 shadow-xs'
-              : 'text-slate-600 hover:text-slate-900'
-          }`}
-        >
-          <Magnet className="w-3.5 h-3.5" />
-          <span className="hidden min-[1700px]:inline short:hidden">Bắt điểm</span>
-        </button>
-
-        {onOpenLabelSettings && (
-          <>
-            <div className="w-px h-4 bg-slate-300 mx-0.5" />
-            <button
-              onClick={onOpenLabelSettings}
-              title="Định dạng tên nhãn đồng bộ toàn Canvas"
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-600 hover:bg-white transition-all shadow-xs"
-            >
-              <Type className="w-3.5 h-3.5 text-blue-600" />
-              <span className="font-serif italic font-bold">Aa</span>
-              <span className="hidden min-[1700px]:inline short:hidden">Định dạng nhãn</span>
-            </button>
-          </>
-        )}
-      </div>
-
-      {/* Zoom controls */}
-      <div className="flex items-center gap-1 shrink-0 bg-slate-50 border border-slate-200 px-1.5 py-1 rounded-xl">
-        <button
-          onClick={onZoomOut}
-          title="Thu nhỏ"
-          className="p-1 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={onResetZoom}
-          title="Đặt lại tỉ lệ 100%"
-          className="text-xs font-semibold text-slate-700 px-1 hover:text-blue-600"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <button
-          onClick={onZoomIn}
-          title="Phóng to"
-          className="p-1 text-slate-600 hover:bg-slate-200 rounded-lg transition-colors"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      {/* Save Project Session & Open Project File */}
-      <div className="flex items-center gap-1.5 shrink-0 bg-slate-100/80 p-1 rounded-xl border border-slate-200/60">
-        {onOpenProject && (
-          <button
-            onClick={onOpenProject}
-            title="Mở phiên làm việc (.edukit / .json) đã lưu từ máy tính"
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-blue-700 hover:bg-white transition-all shadow-xs"
-          >
-            <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden min-[1700px]:inline short:hidden">Mở file</span>
-          </button>
-        )}
-
-        {onSaveProject && (
-          <button
-            onClick={onSaveProject}
-            title="Lưu toàn bộ phiên làm việc (.edukit) vào máy tính để tiện mở lại lần sau"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 transition-all shadow-xs"
-          >
-            <Save className="w-3.5 h-3.5" />
-            <span className="hidden min-[1700px]:inline short:hidden">Lưu file</span>
-          </button>
-        )}
-      </div>
-
-      {/* Export Actions: Copy All & Copy Selection */}
-      <div className="flex items-center gap-2 shrink-0">
-        {/* Copy Selection Button */}
-        <button
-          onClick={onCopySelection}
-          disabled={selectedCount === 0 || isExporting}
-          title="Sao chép các đối tượng đang chọn ra ảnh PNG vào Clipboard (dán Ctrl+V vào Word)"
-          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all duration-150 border ${
-            selectedCount > 0 && !isExporting
-              ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 hover:border-amber-400 active:scale-97 shadow-xs'
-              : 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
-          }`}
-        >
-          <Scissors className="w-3.5 h-3.5 text-amber-600" />
-          <span className="hidden min-[1700px]:inline short:hidden">Sao chép vùng chọn</span>
-          {selectedCount > 0 && (
-            <span className="bg-amber-200 text-amber-900 text-[10px] font-bold px-1.5 py-0.2 rounded-full">
-              {selectedCount}
-            </span>
-          )}
-        </button>
-
-        {/* Copy All Button (Main action requested) */}
         <button
           onClick={onCopyAll}
           disabled={isExporting}
           title="Sao chép toàn bộ hình vẽ thành ảnh PNG nền trong suốt để dán trực tiếp (Ctrl+V) vào Word, PowerPoint"
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-97 transition-all shadow-md shadow-blue-500/25"
+          aria-label="Sao chép toàn bộ hình vẽ"
+          className="flex items-center gap-2 px-2.5 md:px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 active:scale-97 transition-all shadow-md shadow-blue-500/25"
         >
           <Copy className="w-4 h-4" />
-          <span className="hidden md:inline short:hidden">Sao chép toàn bộ</span>
-          <span className="hidden md:inline short:hidden text-[10px] bg-white/25 px-1.5 py-0.5 rounded font-normal">
-            PPT
-          </span>
+          <span className="hidden md:inline short:hidden">Sao chép ảnh</span>
         </button>
 
-        {/* Download Button */}
-        <button
-          onClick={onDownloadPng}
-          disabled={isExporting}
-          title="Tải ảnh PNG về máy"
-          className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors"
-        >
-          <Download className="w-4 h-4" />
-        </button>
-
-        {/* Toggle Chat AI Sidebar Button */}
         {onToggleChat && (
           <button
             onClick={onToggleChat}
             title="Bật/Tắt khung chat vẽ bằng tiếng Việt & Gemini AI"
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+            aria-label="Trợ lý AI"
+            aria-pressed={isChatOpen}
+            className={`flex items-center gap-1.5 px-2.5 md:px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
               isChatOpen
                 ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-xs ring-1 ring-blue-500/20'
                 : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+            <Sparkles className="w-4 h-4 text-blue-600" />
             <span className="hidden sm:inline">Trợ lý AI</span>
           </button>
         )}
+
+        <button
+          onClick={() => setMenuOpen((o) => !o)}
+          title="Thêm: lưới, trục tọa độ, nhãn, giao diện, mở/lưu file, xuất ảnh"
+          aria-label="Thêm tùy chọn"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          className={`flex items-center gap-1.5 px-2 md:px-3 py-2 rounded-xl text-xs font-semibold border transition-colors ${
+            menuOpen ? 'bg-slate-100 border-slate-300 text-slate-900' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          <MoreHorizontal className="w-4 h-4" />
+          <span className="hidden md:inline short:hidden">Thêm</span>
+        </button>
       </div>
-      </div>
+
+      {/* Menu "Thêm" */}
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+          <div
+            role="menu"
+            className="absolute right-2 md:right-4 top-full mt-2 z-50 w-[min(20rem,calc(100vw-1rem))] max-h-[calc(100dvh-4.5rem)] overflow-y-auto p-1.5 rounded-2xl bg-white border border-slate-200 shadow-xl divide-y divide-slate-100 animate-in fade-in slide-in-from-top-2 duration-150"
+          >
+            <MenuSection title="Hiển thị">
+              <MenuItem icon={<Grid className="w-4 h-4 text-slate-500" />} label="Lưới ô vuông" checked={showGrid} onClick={onToggleGrid} />
+              <MenuItem
+                icon={<span className="text-xs font-serif font-bold italic text-slate-500">Oxy</span>}
+                label="Trục tọa độ"
+                checked={showAxes}
+                onClick={onToggleAxes}
+              />
+              <MenuItem icon={<Magnet className="w-4 h-4 text-slate-500" />} label="Bắt điểm vào lưới" checked={snapToGrid} onClick={onToggleSnap} />
+              {onOpenLabelSettings && (
+                <MenuItem icon={<Type className="w-4 h-4 text-blue-600" />} label="Định dạng nhãn điểm" onClick={run(onOpenLabelSettings)} />
+              )}
+              {onCycleTheme && (
+                <MenuItem
+                  icon={themePreference === 'system' ? <Monitor className="w-4 h-4 text-slate-500" /> : themeIcon}
+                  label="Giao diện"
+                  hint={THEME_LABEL[themePreference]}
+                  onClick={onCycleTheme}
+                />
+              )}
+              {/* Thu phóng: trên màn hình rộng đã có sẵn ở thanh trên */}
+              <div className="lg:hidden flex items-center gap-3 px-3 py-1.5">
+                <span className="w-5 flex justify-center shrink-0">
+                  <ZoomIn className="w-4 h-4 text-slate-500" />
+                </span>
+                <span className="flex-1 text-sm text-slate-700">Thu phóng</span>
+                {zoomControls}
+              </div>
+            </MenuSection>
+
+            <MenuSection title="Xuất ảnh">
+              <MenuItem
+                icon={<Scissors className="w-4 h-4 text-amber-600" />}
+                label="Sao chép vùng chọn"
+                hint={selectedCount > 0 ? `${selectedCount} đối tượng` : 'Chưa chọn'}
+                disabled={selectedCount === 0 || isExporting}
+                onClick={run(onCopySelection)}
+              />
+              <MenuItem icon={<Download className="w-4 h-4 text-slate-500" />} label="Tải ảnh PNG về máy" disabled={isExporting} onClick={run(onDownloadPng)} />
+            </MenuSection>
+
+            {(onOpenProject || onSaveProject) && (
+              <MenuSection title="Tệp">
+                {onOpenProject && (
+                  <MenuItem icon={<FolderOpen className="w-4 h-4 text-blue-600" />} label="Mở file (.edukit)" onClick={run(onOpenProject)} />
+                )}
+                {onSaveProject && (
+                  <MenuItem icon={<Save className="w-4 h-4 text-blue-600" />} label="Lưu file (.edukit)" onClick={run(onSaveProject)} />
+                )}
+              </MenuSection>
+            )}
+          </div>
+        </>
+      )}
     </header>
   );
 };

@@ -8,7 +8,7 @@ import type {
   PolygonElement,
   GlobalLabelStyle,
 } from "./types/geometry";
-import { Toolbar } from "./components/Toolbar";
+import { Toolbar, MobileToolbar } from "./components/Toolbar";
 import { HeaderBar } from "./components/HeaderBar";
 import { CanvasArea } from "./components/CanvasArea";
 import { FloatingPropertyBar } from "./components/FloatingPropertyBar";
@@ -831,6 +831,23 @@ export const App: React.FC = () => {
     // Keep clean empty canvas on load
   }, []);
 
+  // Dùng chung cho thanh công cụ dọc (máy tính) và thanh công cụ dưới đáy (điện thoại)
+  const toolbarProps = {
+    currentTool,
+    onSelectTool: (tool: ToolType) => {
+      setCurrentTool(tool);
+      if (tool !== "select") {
+        setSelectedIds([]);
+      }
+    },
+    canUndo: historyIndex > 0,
+    canRedo: historyIndex < history.length - 1,
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+    onClear: handleClear,
+    onOpenPresets: () => setPresetsOpen(true),
+  };
+
   return (
     <div className="flex flex-col w-screen h-screen h-dvh overflow-hidden font-sans">
       {/* Top Header Bar */}
@@ -861,28 +878,14 @@ export const App: React.FC = () => {
       />
 
       {/* Main Workspace: Left Toolbar + Center Canvas + Bottom Command Bar */}
-      <div className="flex flex-1 relative overflow-hidden">
+      <div className="flex flex-1 min-h-0 relative overflow-hidden">
         {/* Left Toolbar */}
-        <Toolbar
-          currentTool={currentTool}
-          onSelectTool={(tool) => {
-            setCurrentTool(tool);
-            if (tool !== "select") {
-              setSelectedIds([]);
-            }
-          }}
-          canUndo={historyIndex > 0}
-          canRedo={historyIndex < history.length - 1}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onClear={handleClear}
-          onOpenPresets={() => setPresetsOpen(true)}
-        />
+<Toolbar {...toolbarProps} />
 
         {/* Center Drawing Canvas (with bottom command input bar) */}
-        <div className="flex-1 flex flex-col relative h-full overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col relative overflow-hidden">
           {/* Canvas Area */}
-          <main className="flex-1 relative w-full h-full">
+          <main className="flex-1 min-h-0 relative w-full">
             <CanvasArea
               currentTool={currentTool}
               elements={elements}
@@ -918,6 +921,9 @@ export const App: React.FC = () => {
             onExecute={handleExecuteCommand}
             lastMessage={lastCommandMessage}
           />
+
+          {/* Thanh công cụ dưới đáy (chỉ điện thoại dựng đứng): công cụ chính + Hoàn tác / Làm lại */}
+          <MobileToolbar {...toolbarProps} />
         </div>
       </div>
 
@@ -968,7 +974,7 @@ export const App: React.FC = () => {
 
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-20 md:bottom-16 left-3 right-3 md:left-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border border-slate-200 bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
+        <div className="fixed bottom-20 md:bottom-16 short:bottom-4 left-3 right-3 md:left-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-2xl shadow-xl border border-slate-200 bg-white text-slate-800 animate-in slide-in-from-bottom-5 duration-200">
           {toast.type === "success" && (
             <CheckCircle2 className="w-5 h-5 text-emerald-500" />
           )}
