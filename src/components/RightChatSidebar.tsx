@@ -20,6 +20,8 @@ import {
   Compass,
   Mic,
   MicOff,
+  RotateCcw,
+  RotateCw,
 } from "lucide-react";
 import { useSpeechInput } from "../utils/useSpeechInput";
 import { normalizeSpokenGeometry } from "../utils/speechNormalize";
@@ -59,6 +61,11 @@ interface RightChatSidebarProps {
   ) => Promise<ChatPromptResult>;
   /** Gọi khi xóa lịch sử chat (để lần chat sau không còn ngữ cảnh các yêu cầu cũ) */
   onClearChat?: () => void;
+  /** Hoàn tác / Làm lại ngay trong khung chat (trên điện thoại khung chat che bảng vẽ) */
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 const SAMPLE_PROMPTS = [
@@ -76,6 +83,10 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
   onToggleOpen,
   onExecutePrompt,
   onClearChat,
+  canUndo = false,
+  canRedo = false,
+  onUndo,
+  onRedo,
 }) => {
   const [mode, setMode] = useState<"offline" | "gemini">("gemini");
   const [apiKey, setApiKey] = useState<string>(() => {
@@ -85,6 +96,8 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
     return getCachedModel();
   });
   const [showApiKey, setShowApiKey] = useState(false);
+  // Ô nhập API Key chỉ mở sẵn khi chưa có key; có key rồi thì thu vào nút 🔑 cho gọn
+  const [keyEditorOpen, setKeyEditorOpen] = useState<boolean>(() => !localStorage.getItem("edukit_gemini_api_key"));
 
   // Agent interaction level (Mức độ tương tác của Agent)
   const [agentLevel, setAgentLevel] = useState<AgentInteractionLevel>(() => {
@@ -335,153 +348,171 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
             : "w-0 translate-x-full overflow-hidden"
         }`}
       >
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs">
+        {/* Header gọn: 1 dòng — tên, Hoàn tác / Làm lại, xóa chat, thu gọn */}
+        <div className="shrink-0 px-3 py-2 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-7 h-7 shrink-0 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs">
               <Bot className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                <span>Trợ Lý Vẽ Hình AI</span>
-                <span className="text-[10px] font-semibold bg-blue-100 text-blue-700 px-1.5 py-0.2 rounded-full">
-                  v2.0
-                </span>
-              </h3>
-              <p className="text-[10px] text-slate-500">
-                Tiếng Việt • Giải Tích • Gemini AI
-              </p>
-            </div>
+            <h3 className="text-xs font-bold text-slate-800 truncate">Trợ Lý Vẽ Hình AI</h3>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onUndo && (
+              <button
+                onClick={onUndo}
+                disabled={!canUndo}
+                title="Hoàn tác hình vừa vẽ"
+                aria-label="Hoàn tác"
+                className={`p-2 rounded-lg transition-colors ${
+                  canUndo ? "text-slate-700 hover:bg-slate-200 active:scale-95" : "text-slate-300 cursor-not-allowed"
+                }`}
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+            )}
+            {onRedo && (
+              <button
+                onClick={onRedo}
+                disabled={!canRedo}
+                title="Làm lại"
+                aria-label="Làm lại"
+                className={`p-2 rounded-lg transition-colors ${
+                  canRedo ? "text-slate-700 hover:bg-slate-200 active:scale-95" : "text-slate-300 cursor-not-allowed"
+                }`}
+              >
+                <RotateCw className="w-4 h-4" />
+              </button>
+            )}
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
               onClick={handleClearChat}
               title="Xóa lịch sử chat"
-              className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 transition-colors"
+              aria-label="Xóa lịch sử chat"
+              className="p-2 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-slate-200 transition-colors"
             >
               <Trash2 className="w-4 h-4" />
             </button>
             <button
               onClick={onToggleOpen}
               title="Thu gọn"
-              className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
+              aria-label="Thu gọn"
+              className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* Active Agent & Interaction Level Selector Bar (Clickable) */}
-        <div className="p-2 border-b border-slate-200 bg-slate-50/70">
-          <button
-            onClick={() => setIsLevelModalOpen(true)}
-            title="Nhấn để đổi mức độ tương tác và cấu hình Agent"
-            className="w-full text-left p-2 rounded-xl bg-white border border-slate-200 hover:border-blue-400 transition-all shadow-xs group flex items-center justify-between"
-          >
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-7 h-7 rounded-lg flex items-center justify-center border ${levelInfo.color}`}
+        {/* Thanh cài đặt gọn 1 dòng: chế độ JS / Gemini + mức Agent + nút API Key */}
+        <div className="shrink-0 px-2 py-1.5 border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-1.5">
+            <div className="flex p-0.5 bg-slate-100 rounded-lg text-[11px] font-semibold shrink-0">
+              <button
+                onClick={() => setMode("offline")}
+                title="Bộ giải hình học JS — miễn phí, không cần mạng"
+                className={`py-1 px-2 rounded-md flex items-center gap-1 transition-all ${
+                  mode === "offline" ? "bg-white text-blue-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                }`}
               >
-                <LevelIcon className="w-3.5 h-3.5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition-colors">
-                    {mode === "offline"
-                      ? "Bộ giải Hình học JS (Offline)"
-                      : selectedModel}
-                  </span>
-                  <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded-full font-medium">
-                    {levelInfo.title.split(":")[0]}
-                  </span>
-                </div>
-                <p className="text-[10px] text-slate-500 line-clamp-1">
-                  {levelInfo.desc}
-                </p>
-              </div>
+                <Code2 className="w-3.5 h-3.5" />
+                <span>JS</span>
+              </button>
+              <button
+                onClick={() => setMode("gemini")}
+                className={`py-1 px-2 rounded-md flex items-center gap-1 transition-all ${
+                  mode === "gemini"
+                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Gemini</span>
+              </button>
             </div>
-            <div className="flex items-center gap-1 text-slate-400 group-hover:text-blue-600 text-[10px] font-semibold pr-1">
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Chỉnh</span>
-            </div>
-          </button>
-
-        </div>
-
-        {/* Mode Selector Tab (Thuần JS vs Gemini AI) */}
-        <div className="p-2 border-b border-slate-200 bg-white">
-          <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-xl text-xs font-semibold gap-1">
-            <button
-              onClick={() => setMode("offline")}
-              className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                mode === "offline"
-                  ? "bg-white text-blue-700 shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Code2 className="w-3.5 h-3.5" />
-              <span>Thuần JS (Free)</span>
-            </button>
 
             <button
-              onClick={() => setMode("gemini")}
-              className={`py-1.5 px-2 rounded-lg flex items-center justify-center gap-1.5 transition-all ${
-                mode === "gemini"
-                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
+              onClick={() => setIsLevelModalOpen(true)}
+              title={`${levelInfo.title} — nhấn để đổi mức độ và mô hình AI`}
+              className="flex-1 min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-lg border border-slate-200 hover:border-blue-400 transition-colors text-left"
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Gemini AI</span>
+              <span className={`w-5 h-5 shrink-0 rounded-md flex items-center justify-center border ${levelInfo.color}`}>
+                <LevelIcon className="w-3 h-3" />
+              </span>
+              <span className="text-[11px] font-semibold text-slate-700 truncate">
+                {levelInfo.title.split(":")[0]}
+                {mode === "gemini" && <span className="font-normal text-slate-500"> · {selectedModel}</span>}
+              </span>
+              <Sliders className="w-3.5 h-3.5 ml-auto shrink-0 text-slate-400" />
             </button>
+
+            {mode === "gemini" && (
+              <button
+                onClick={() => setKeyEditorOpen((o) => !o)}
+                title={apiKey.trim() ? "Đã có Gemini API Key — nhấn để sửa" : "Nhập Gemini API Key"}
+                aria-label="Gemini API Key"
+                aria-expanded={keyEditorOpen}
+                className={`relative p-1.5 shrink-0 rounded-lg border transition-colors ${
+                  keyEditorOpen
+                    ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                    : "border-slate-200 text-slate-500 hover:border-indigo-300"
+                }`}
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span
+                  className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-white ${
+                    apiKey.trim() ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+              </button>
+            )}
           </div>
 
-          {/* Gemini API Key config toggle (Only if needed and user wants custom key) */}
-          {mode === "gemini" && (
-            <div className="mt-2 p-2 bg-indigo-50/60 rounded-xl border border-indigo-100 text-xs">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="font-semibold text-indigo-900 flex items-center gap-1">
-                  <Key className="w-3 h-3 text-indigo-600" />
-                  Gemini API Key:
-                </span>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
-                >
-                  <span>Lấy key miễn phí</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </a>
-              </div>
-
-              <div className="relative flex items-center">
+          {/* Ô nhập API Key (chỉ mở khi cần) */}
+          {mode === "gemini" && keyEditorOpen && (
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="relative flex-1 flex items-center">
                 <input
                   type={showApiKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Dán mã Gemini API Key tại đây..."
+                  placeholder="Dán Gemini API Key..."
                   className="w-full pl-2 pr-8 py-1.5 text-xs bg-white border border-indigo-200 rounded-lg focus:outline-hidden focus:ring-1 focus:ring-indigo-500 font-mono"
                 />
                 <button
                   type="button"
                   onClick={() => setShowApiKey(!showApiKey)}
+                  aria-label={showApiKey ? "Ẩn key" : "Hiện key"}
                   className="absolute right-2 text-slate-400 hover:text-slate-600"
                 >
-                  {showApiKey ? (
-                    <EyeOff className="w-3.5 h-3.5" />
-                  ) : (
-                    <Eye className="w-3.5 h-3.5" />
-                  )}
+                  {showApiKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
+              <a
+                href="https://aistudio.google.com/app/apikey"
+                target="_blank"
+                rel="noreferrer"
+                className="shrink-0 text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
+              >
+                <span>Lấy key</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+              {apiKey.trim() && (
+                <button
+                  type="button"
+                  onClick={() => setKeyEditorOpen(false)}
+                  aria-label="Xong"
+                  className="shrink-0 p-1.5 rounded-lg bg-indigo-600 text-white"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
           )}
         </div>
 
         {/* Message List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-3 bg-slate-50/40 text-xs">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 bg-slate-50/40 text-xs">
           {messages.map((m) => (
             <div
               key={m.id}
@@ -541,11 +572,11 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
         </div>
 
         {/* Quick Sample Prompts Carousel */}
-        <div className="p-2 border-t border-slate-200 bg-white">
-          <div className="text-[10px] font-semibold text-slate-400 mb-1 flex items-center gap-1">
+        <div className="shrink-0 px-2 pt-1.5 border-t border-slate-200 bg-white">
+          <div className="hidden md:flex text-[10px] font-semibold text-slate-400 mb-1 items-center gap-1">
             <span>Mẫu bài toán hình học kinh điển:</span>
           </div>
-          <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+          <div className="flex gap-1.5 overflow-x-auto pb-1.5 no-scrollbar md:scrollbar-thin">
             {SAMPLE_PROMPTS.map((prompt, i) => (
               <button
                 key={i}
@@ -561,17 +592,20 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
         </div>
 
         {/* Input Bar (Được làm cao thêm 4 dòng dạng Textarea cho phép dán đề dài) */}
-        <div className="p-3 border-t border-slate-200 bg-white">
+        <div
+          className="shrink-0 px-2 pt-1 md:p-3 bg-white"
+          style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+        >
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSend();
             }}
-            className="flex flex-col gap-2"
+            className="flex flex-col gap-1 md:gap-2"
           >
             <div className="relative">
               <textarea
-                rows={5}
+                rows={2}
                 value={inputPrompt}
                 onChange={(e) => setInputPrompt(e.target.value)}
                 onKeyDown={(e) => {
@@ -583,11 +617,11 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                 }}
                 placeholder={
                   mode === "gemini" && !apiKey.trim()
-                    ? "Dán Gemini API Key ở trên để mở khóa vẽ tự động bằng AI..."
-                    : "Nhập: Vẽ tam giác vuông ABC, cho đường tròn (O), tiếp tuyến MA MB... (Enter để vẽ)"
+                    ? "Dán Gemini API Key ở ô trên, hoặc chọn JS để vẽ miễn phí..."
+                    : "Nhập đề: Vẽ tam giác vuông ABC, đường tròn (O)..."
                 }
                 disabled={isLoading}
-                className="w-full p-2.5 pb-12 text-xs border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 bg-slate-50 border-slate-300 focus:border-blue-500 hover:bg-white focus:bg-white resize-none shadow-2xs font-sans leading-relaxed"
+                className="w-full block py-2.5 pl-2.5 pr-24 md:pr-2.5 md:pb-12 min-h-[3.25rem] md:min-h-[8.5rem] max-h-40 text-sm md:text-xs border rounded-xl focus:outline-hidden focus:ring-2 focus:ring-blue-500/20 text-slate-800 placeholder-slate-400 bg-slate-50 border-slate-300 focus:border-blue-500 hover:bg-white focus:bg-white resize-none shadow-2xs font-sans leading-relaxed"
               />
               {speech.supported && (
                 <button
@@ -597,7 +631,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                   title={speech.isListening ? "Đang nghe... bấm để dừng" : "Nói đề bài bằng tiếng Việt (vd: vẽ tam giác a b c)"}
                   aria-label={speech.isListening ? "Dừng ghi âm" : "Nhập bằng giọng nói"}
                   aria-pressed={speech.isListening}
-                  className={`absolute right-13 bottom-3 p-2 rounded-xl transition-all active:scale-95 ${
+                  className={`absolute right-12 bottom-2 md:bottom-3 p-2 rounded-xl transition-all active:scale-95 ${
                     speech.isListening
                       ? "bg-red-500 hover:bg-red-600 text-white shadow-md shadow-red-500/30 animate-pulse"
                       : isLoading
@@ -612,7 +646,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                 type="submit"
                 disabled={!inputPrompt.trim() || isLoading}
                 title="Gửi đề bài (Enter)"
-                className={`absolute right-2.5 bottom-3 p-2 rounded-xl transition-all ${
+                className={`absolute right-2 md:right-2.5 bottom-2 md:bottom-3 p-2 rounded-xl transition-all ${
                   inputPrompt.trim() && !isLoading
                     ? "bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/20 active:scale-95"
                     : "bg-slate-200 text-slate-400 cursor-not-allowed"
@@ -621,7 +655,7 @@ export const RightChatSidebar: React.FC<RightChatSidebarProps> = ({
                 <Send className="w-4 h-4" />
               </button>
             </div>
-            <div className="flex items-center justify-between text-[10px] text-slate-400 px-1">
+            <div className="hidden md:flex items-center justify-between text-[10px] text-slate-400 px-1">
               <span>
                 {speech.isListening ? (
                   <span className="text-red-500 font-semibold">● Đang nghe — nói xong sẽ tự vẽ</span>
