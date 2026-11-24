@@ -331,7 +331,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     };
     updateSize();
     window.addEventListener('resize', updateSize);
-    return () => window.removeEventListener('resize', updateSize);
+    // Theo dõi cả khi khung vẽ đổi kích thước mà cửa sổ không đổi (ẩn/hiện thanh công cụ khi xoay máy...)
+    const observer =
+      typeof ResizeObserver !== 'undefined' && containerRef.current
+        ? new ResizeObserver(updateSize)
+        : null;
+    if (observer && containerRef.current) observer.observe(containerRef.current);
+    return () => {
+      window.removeEventListener('resize', updateSize);
+      observer?.disconnect();
+    };
   }, []);
 
   // Update Transformer nodes when selection changes
