@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @import "katex/dist/katex.min.css";
 
-/* Màn hình thấp (điện thoại xoay ngang): dùng giao diện thu gọn như trên điện thoại */
-@custom-variant short (@media (max-height: 500px));
+/* Màn hình thấp khi xoay ngang (chỉ áp dụng khi nằm ngang; điện thoại dựng đứng luôn có thanh công cụ dưới): dùng giao diện thu gọn như trên điện thoại */
+@custom-variant short (@media (max-height: 500px) and (orientation: landscape));
 /* Chế độ tối bật bằng class "dark" trên <html> (nút Sáng/Tối/Tự động trên thanh trên cùng) */
 @custom-variant dark (&:where(.dark, .dark *));
 
