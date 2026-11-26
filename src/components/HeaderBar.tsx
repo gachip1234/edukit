@@ -5,7 +5,7 @@ import {
   Copy,
   Download,
   Scissors,
-  Shapes,
+  House,
   ZoomIn,
   ZoomOut,
   Sparkles,
@@ -160,9 +160,14 @@ export const HeaderBar: React.FC<HeaderBarProps> = ({
     <header className="relative h-12 md:h-16 short:h-12 bg-white/75 backdrop-blur-xl backdrop-saturate-150 border-b border-slate-200/80 px-2 md:px-4 flex items-center justify-between gap-2 z-40 shadow-xs select-none">
       {/* Logo & tên */}
       <div className="flex items-center gap-2 md:gap-3 min-w-0">
-        <div className="w-8 h-8 md:w-10 md:h-10 short:w-8 short:h-8 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
-          <Shapes className="w-4 h-4 md:w-5 md:h-5" />
-        </div>
+        <a
+          href="#/toan"
+          title="Về danh sách công cụ môn Toán"
+          aria-label="Về danh sách công cụ môn Toán"
+          className="w-8 h-8 md:w-10 md:h-10 short:w-8 short:h-8 shrink-0 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20"
+        >
+          <House className="w-4 h-4 md:w-5 md:h-5" />
+        </a>
         <div className="min-w-0">
           <h1 className="text-sm md:text-base font-bold text-slate-800 leading-tight flex items-center gap-2 truncate">
             EduKit<span className="hidden sm:inline">Geometry</span>
