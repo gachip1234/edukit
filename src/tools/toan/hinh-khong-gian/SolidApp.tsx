@@ -1,6 +1,6 @@
 /** Công cụ hình học không gian */
 import React, { useEffect, useReducer, useRef, useState } from 'react';
-import { CircleDot, Copy, Crosshair, Dot, Download, FolderOpen, House, Minus, Move3d, Redo2, Rotate3d, Save, Target, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { CircleDot, Copy, Crosshair, Dot, Download, FolderOpen, House, Minus, Move3d, Pause, Play, Redo2, Rotate3d, Save, Target, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { toolHref, subjectHref } from '../../../app/router';
 import { toolsOf, type ToolId } from '../../registry';
 import {
@@ -18,7 +18,8 @@ import {
   type PointSpec,
   type SolidDoc,
 } from './model';
-import { SGK_VIEW, type Frame, type Scene, type View } from './scene';
+import { SGK_VIEW, roundYaw, type Frame, type Scene, type View } from './scene';
+import { useAutoRotate } from './useAutoRotate';
 import { basePlanePoint, freePosition, pickFace, pickLine, pickOnObject, type ScreenPoint } from './picking';
 import { EMPTY_PICK, applyPick, intersectHint, type IntersectMode, type IntersectPick, type PickInput } from './intersect';
 import { copyScene, downloadBlob, sceneToPng, type DrawStyle } from './exportImage';
@@ -58,6 +59,10 @@ export const SolidApp: React.FC = () => {
   const [intersectMode, setIntersectMode] = useState<IntersectMode>('line-line');
   const [intersectPick, setIntersectPick] = useState<IntersectPick>(EMPTY_PICK);
   const [toast, setToast] = useState<{ text: string; error?: boolean; id: number } | null>(null);
+  const [spinning, setSpinning] = useState(false);
+  /** Đang giữ chuột hoặc ngón tay trên bảng vẽ */
+  const held = useRef(false);
+  useAutoRotate(spinning, held, setView);
   const sceneRef = useRef<Scene | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -67,10 +72,21 @@ export const SolidApp: React.FC = () => {
     setPicked([]);
     setIntersectPick(EMPTY_PICK);
   };
+  const stopSpin = () => {
+    setSpinning(false);
+    setView(roundYaw);
+  };
   const selectTool = (next: SolidTool) => {
+    // Hình đứng yên thì mới bấm chọn điểm, cạnh được chính xác
+    if (next !== 'rotate') stopSpin();
     setTool(next);
     setPointMenu(false);
     clearPicks();
+  };
+  const toggleSpin = () => {
+    if (spinning) return stopSpin();
+    selectTool('rotate');
+    setSpinning(true);
   };
   const timeTravel = (type: 'undo' | 'redo') => {
     clearPicks();
@@ -95,6 +111,8 @@ export const SolidApp: React.FC = () => {
         setIntersectPick(EMPTY_PICK);
         dispatch({ type: key === 'y' || e.shiftKey ? 'redo' : 'undo' });
       } else if (key === 'escape') {
+        setSpinning(false);
+        setView(roundYaw);
         setTool('rotate');
         setPointMenu(false);
         setPicked([]);
@@ -103,6 +121,16 @@ export const SolidApp: React.FC = () => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
+    const release = () => (held.current = false);
+    const events = ['pointerup', 'pointercancel', 'blur'] as const;
+    events.forEach((name) => window.addEventListener(name, release));
+    return () => {
+      release();
+      events.forEach((name) => window.removeEventListener(name, release));
+    };
   }, []);
 
   const intersect = (input: PickInput) => {
@@ -201,6 +229,7 @@ export const SolidApp: React.FC = () => {
     try {
       const project = parseProject(await file.text());
       change(() => project.doc);
+      stopSpin();
       setView(project.view);
       clearPicks();
       notify(`Đã mở: ${file.name}`);
@@ -328,7 +357,7 @@ export const SolidApp: React.FC = () => {
               </div>
             </div>
           )}
-          <div className="relative flex-1 min-h-0">
+          <div className="relative flex-1 min-h-0" onPointerDownCapture={() => (held.current = true)}>
             <SolidCanvas
               doc={doc}
               view={view}
@@ -351,6 +380,17 @@ export const SolidApp: React.FC = () => {
               }
               sceneRef={sceneRef}
             />
+            <button
+              type="button"
+              onClick={toggleSpin}
+              title={spinning ? 'Dừng xoay (Esc)' : 'Tự xoay nhẹ quanh trục đứng qua tâm hình'}
+              className={`absolute left-3 top-3 md:top-auto md:bottom-3 short:top-auto short:bottom-3 h-11.5 px-3.5 rounded-xl border shadow-sm flex items-center gap-2 text-xs font-semibold ${
+                spinning ? 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {spinning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              {spinning ? 'Dừng xoay' : 'Tự xoay'}
+            </button>
             <div className="absolute right-3 top-3 md:top-auto md:bottom-3 short:top-auto short:bottom-3 flex items-center gap-1 p-1 rounded-xl bg-white border border-slate-200 shadow-sm">
               <button type="button" onClick={() => setZoom((z) => Math.max(0.4, z / 1.15))} aria-label="Thu nhỏ" className="w-9 h-9 flex items-center justify-center rounded-lg text-slate-700 hover:bg-slate-100">
                 <ZoomOut className="w-4 h-4" />
@@ -426,7 +466,10 @@ export const SolidApp: React.FC = () => {
             }}
             onRemoveSegment={(id) => change((d) => removeSegment(d, id))}
             onResetLabels={() => change((d) => ({ ...d, labelOffsets: {} }))}
-            onViewChange={setView}
+            onViewChange={(next) => {
+              setSpinning(false);
+              setView(roundYaw(next));
+            }}
             onStyleChange={setStyle}
           />
         </aside>

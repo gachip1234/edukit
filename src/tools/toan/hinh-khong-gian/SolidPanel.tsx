@@ -134,7 +134,7 @@ export const SolidPanel: React.FC<Props> = ({
         </div>
         {view.mode === 'free' && (
           <>
-            <Slider label="Xoay ngang" unit="°" value={view.yaw} min={-180} max={180} step={1} onChange={(yaw) => onViewChange({ ...view, yaw })} />
+            <Slider label="Xoay ngang" unit="°" value={Math.round(view.yaw)} min={-180} max={180} step={1} onChange={(yaw) => onViewChange({ ...view, yaw })} />
             <Slider label="Nhìn từ trên" unit="°" value={view.tilt} min={-60} max={60} step={1} onChange={(tilt) => onViewChange({ ...view, tilt })} />
           </>
         )}

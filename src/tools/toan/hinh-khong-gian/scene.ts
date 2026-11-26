@@ -17,6 +17,19 @@ export const SGK_VIEW: View = { mode: 'sgk', yaw: -25, tilt: 20 };
 const DEPTH_SCALE = 0.5;
 const DEPTH_ANGLE = Math.PI / 4;
 
+/**
+ * Xoay thêm quanh trục đứng đi qua tâm khối (trục không được vẽ ra).
+ * Hình kiểu sách giáo khoa là phép chiếu xiên nên khi xoay phải chuyển sang xoay tự do.
+ */
+export const spinView = (view: View, degrees: number): View => ({
+  mode: 'free',
+  yaw: ((((view.yaw + degrees + 180) % 360) + 360) % 360) - 180,
+  tilt: view.tilt,
+});
+
+/** Làm tròn góc xoay sau khi tự xoay (giữ nguyên đối tượng nếu góc đã tròn) */
+export const roundYaw = (view: View): View => (Number.isInteger(view.yaw) ? view : { ...view, yaw: Math.round(view.yaw) });
+
 export interface Projection {
   /** Tọa độ trên màn hình (y hướng xuống) */
   project: (p: Vec3) => { x: number; y: number };
