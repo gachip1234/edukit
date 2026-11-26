@@ -1,12 +1,15 @@
-/** Dữ liệu của hình không gian: khối đa diện lồi, điểm và đoạn thẳng thêm vào, lịch sử hoàn tác. */
+/** Dữ liệu của hình không gian: khối đa diện lồi và khối tròn, điểm và đoạn thẳng thêm vào, màu sắc, lịch sử hoàn tác. */
 import { add, cross, dot, length, lerp, scale, sub, type Vec3 } from './vec';
 
 export type { Vec3 };
 
-export type SolidKind = 'chop-tu-giac' | 'chop-tam-giac' | 'hop-chu-nhat' | 'lap-phuong' | 'lang-tru';
+export type RoundKind = 'cau' | 'non' | 'tru';
+export type SolidKind = 'chop-tu-giac' | 'chop-tam-giac' | 'hop-chu-nhat' | 'lap-phuong' | 'lang-tru' | RoundKind;
+
+export const isRound = (kind: SolidKind): kind is RoundKind => kind === 'cau' || kind === 'non' || kind === 'tru';
 
 export interface Dims {
-  /** Cạnh đáy (hoặc chiều dài) */
+  /** Cạnh đáy (hoặc chiều dài); bán kính với khối tròn */
   a: number;
   /** Chiều rộng (chỉ hình hộp chữ nhật) */
   b: number;
@@ -23,6 +26,9 @@ export interface Dims {
  *           (`open`: được đi ra ngoài mặt của khối, chỉ cần thuộc mặt phẳng đó)
  * - 'line-line': giao điểm đường thẳng of[0]of[1] và of[2]of[3]
  * - 'line-plane': giao điểm đường thẳng of[0]of[1] với mặt phẳng (of[2] of[3] of[4])
+ * Chỉ có ở khối tròn, với of[0] là tâm của đường tròn:
+ * - 'rim': nằm trên đường tròn, góc `t` tính theo vòng (0 đến 1)
+ * - 'disk': nằm trên mặt phẳng ngang qua tâm: tâm + bán kính × (u, 0, v)
  */
 export type ExtraPoint = { id: string; name: string } & (
   | { type?: undefined; of: string[] }
@@ -30,6 +36,8 @@ export type ExtraPoint = { id: string; name: string } & (
   | { type: 'on'; of: string[]; t: number }
   | { type: 'face'; of: string[]; u: number; v: number; open?: boolean }
   | { type: 'line-line' | 'line-plane'; of: string[] }
+  | { type: 'rim'; of: string[]; t: number }
+  | { type: 'disk'; of: string[]; u: number; v: number; open?: boolean }
 );
 
 /** Cách xác định một điểm, chưa có mã và tên */
@@ -53,13 +61,66 @@ export interface SolidDoc {
   segments: Segment[];
   /** Độ dời nhãn do người dùng kéo, tính theo đơn vị của hình */
   labelOffsets: Record<string, { x: number; y: number }>;
+  /** Màu và trạng thái ẩn của điểm, đoạn, đường cong; khóa tạo bởi pointKey, lineKey, curveKey */
+  looks: Record<string, Look>;
+  /** Màu tô của các mặt; khóa tạo bởi faceKey */
+  fills: Record<string, string>;
 }
+
+export interface Look {
+  color?: string;
+  hidden?: boolean;
+}
+
+export const pointKey = (id: string) => `p:${id}`;
+export const lineKey = (a: string, b: string) => `l:${[a, b].sort().join('|')}`;
+export const curveKey = (name: string) => `c:${name}`;
+export const faceKey = (...ids: string[]) => `f:${[...ids].sort().join('|')}`;
+
+/** Đổi màu hoặc ẩn/hiện một đối tượng. `color: null` là trở về màu mặc định. */
+export function setLook(doc: SolidDoc, key: string, change: { color?: string | null; hidden?: boolean }): SolidDoc {
+  const old = doc.looks[key] ?? {};
+  const color = change.color === undefined ? old.color : (change.color ?? undefined);
+  const hidden = change.hidden ?? old.hidden ?? false;
+  if (color === old.color && hidden === (old.hidden ?? false)) return doc;
+  const looks = { ...doc.looks };
+  if (color === undefined && !hidden) delete looks[key];
+  else looks[key] = { ...(color ? { color } : {}), ...(hidden ? { hidden } : {}) };
+  return { ...doc, looks };
+}
+
+/** Tô hoặc bỏ tô (`color: null`) nhiều mặt cùng lúc */
+export function setFills(doc: SolidDoc, keys: string[], color: string | null): SolidDoc {
+  if (keys.every((key) => (doc.fills[key] ?? null) === color)) return doc;
+  const fills = { ...doc.fills };
+  for (const key of keys) {
+    if (color) fills[key] = color;
+    else delete fills[key];
+  }
+  return { ...doc, fills };
+}
+
+export const hasHidden = (doc: SolidDoc) => Object.values(doc.looks).some((look) => look.hidden);
+
+/** Hiện lại mọi thứ đang ẩn, giữ nguyên màu */
+export const showAll = (doc: SolidDoc): SolidDoc => Object.keys(doc.looks).reduce((d, key) => setLook(d, key, { hidden: false }), doc);
 
 export interface SolidMesh {
   vertices: { id: string; name: string; p: Vec3 }[];
   faces: number[][];
   /** Các đỉnh của mặt đáy (để thêm tâm đáy) */
   base: number[];
+  /** Đoạn vẽ sẵn của khối tròn (trục, bán kính) */
+  lines: [string, string][];
+  /** Có khi là khối tròn: trục đứng đi qua gốc tọa độ, đáy ở y0, đỉnh ở y1 */
+  round?: RoundShape;
+}
+
+export interface RoundShape {
+  type: RoundKind;
+  r: number;
+  y0: number;
+  y1: number;
 }
 
 export const SOLIDS: { kind: SolidKind; label: string; dims: { key: keyof Dims; label: string }[] }[] = [
@@ -68,6 +129,9 @@ export const SOLIDS: { kind: SolidKind; label: string; dims: { key: keyof Dims; 
   { kind: 'hop-chu-nhat', label: 'Hình hộp chữ nhật', dims: [{ key: 'a', label: 'Chiều dài' }, { key: 'b', label: 'Chiều rộng' }, { key: 'h', label: 'Chiều cao' }] },
   { kind: 'lap-phuong', label: 'Hình lập phương', dims: [{ key: 'a', label: 'Cạnh' }] },
   { kind: 'lang-tru', label: 'Lăng trụ tam giác đứng', dims: [{ key: 'a', label: 'Cạnh đáy' }, { key: 'h', label: 'Chiều cao' }] },
+  { kind: 'cau', label: 'Hình cầu', dims: [{ key: 'a', label: 'Bán kính' }] },
+  { kind: 'non', label: 'Hình nón', dims: [{ key: 'a', label: 'Bán kính đáy' }, { key: 'h', label: 'Chiều cao' }] },
+  { kind: 'tru', label: 'Hình trụ', dims: [{ key: 'a', label: 'Bán kính đáy' }, { key: 'h', label: 'Chiều cao' }] },
 ];
 
 export const MIN_DIM = 1;
@@ -79,10 +143,13 @@ const DEFAULT_DIMS: Record<SolidKind, Dims> = {
   'hop-chu-nhat': { a: 6, b: 4, h: 4 },
   'lap-phuong': { a: 4.5, b: 4.5, h: 4.5 },
   'lang-tru': { a: 5, b: 5, h: 5.5 },
+  cau: { a: 3.5, b: 3.5, h: 7 },
+  non: { a: 3, b: 3, h: 6 },
+  tru: { a: 3, b: 3, h: 5 },
 };
 
 export function createDoc(kind: SolidKind): SolidDoc {
-  return { kind, dims: { ...DEFAULT_DIMS[kind] }, names: {}, points: [], segments: [], labelOffsets: {} };
+  return { kind, dims: { ...DEFAULT_DIMS[kind] }, names: {}, points: [], segments: [], labelOffsets: {}, looks: {}, fills: {} };
 }
 
 /**
@@ -111,7 +178,27 @@ export function buildMesh(doc: SolidDoc): SolidMesh {
     [a / 2, y, -radius / 2],
   ];
 
+  const round = (type: RoundKind, y0: number, y1: number, points: [string, Vec3][], lines: [string, string][]): SolidMesh => ({
+    vertices: points.map(([id, p]) => v(id, p)),
+    faces: [],
+    base: [],
+    lines,
+    round: { type, r: a, y0, y1 },
+  });
+
   switch (doc.kind) {
+    case 'cau':
+      return round('cau', -a, a, [['O', [0, 0, 0]], ['A', [-a, 0, 0]], ['B', [a, 0, 0]]], [['O', 'B']]);
+    case 'non':
+      return round('non', y0, y1, [['O', [0, y0, 0]], ['A', [-a, y0, 0]], ['B', [a, y0, 0]], ['S', [0, y1, 0]]], [['S', 'O'], ['O', 'B']]);
+    case 'tru':
+      return round(
+        'tru',
+        y0,
+        y1,
+        [['O', [0, y0, 0]], ["O'", [0, y1, 0]], ['A', [-a, y0, 0]], ['B', [a, y0, 0]], ["A'", [-a, y1, 0]], ["B'", [a, y1, 0]]],
+        [['O', "O'"], ['O', 'B']],
+      );
     case 'chop-tu-giac':
     case 'chop-tam-giac': {
       const ring = doc.kind === 'chop-tu-giac' ? square(y0) : triangle(y0);
@@ -121,6 +208,7 @@ export function buildMesh(doc: SolidDoc): SolidMesh {
         vertices: [...ring.map((p, i) => v('ABCD'[i], p)), v('S', [0, y1, 0])],
         faces: [base, ...base.map((i) => [i, (i + 1) % n, n])],
         base,
+        lines: [],
       };
     }
     default: {
@@ -133,8 +221,63 @@ export function buildMesh(doc: SolidDoc): SolidMesh {
         vertices: [...bottom.map((p, i) => v('ABCD'[i], p)), ...top.map((p, i) => v(`${'ABCD'[i]}'`, p))],
         faces: [base, base.map((i) => i + n), ...base.map((i) => [i, (i + 1) % n, ((i + 1) % n) + n, i + n])],
         base,
+        lines: [],
       };
     }
+  }
+}
+
+export interface RoundCurve {
+  id: 'base' | 'top' | 'equator';
+  label: string;
+  /** Mã điểm tâm */
+  center: string;
+}
+
+/** Các đường tròn vẽ sẵn của khối tròn */
+export function roundCurves(mesh: SolidMesh): RoundCurve[] {
+  switch (mesh.round?.type) {
+    case 'cau':
+      return [{ id: 'equator', label: 'Đường tròn lớn (ngang)', center: 'O' }];
+    case 'non':
+      return [{ id: 'base', label: 'Đường tròn đáy', center: 'O' }];
+    case 'tru':
+      return [
+        { id: 'base', label: 'Đường tròn đáy dưới', center: 'O' },
+        { id: 'top', label: 'Đường tròn đáy trên', center: "O'" },
+      ];
+    default:
+      return [];
+  }
+}
+
+/** Nét bao quanh khối tròn, thay đổi theo góc nhìn */
+export const outlineLabel = (type: RoundKind) => (type === 'cau' ? 'Đường tròn bao' : 'Đường sinh ở hai bên');
+
+export interface SolidFace {
+  key: string;
+  label: string;
+  /** Mã đỉnh theo thứ tự quanh mặt (chỉ khối đa diện) */
+  ids?: string[];
+  /** Phần của khối tròn */
+  part?: 'base' | 'top' | 'side' | 'surface';
+}
+
+/** Mọi mặt tô màu được */
+export function solidFaces(mesh: SolidMesh): SolidFace[] {
+  const part = (name: NonNullable<SolidFace['part']>, label: string): SolidFace => ({ key: faceKey(name), label, part: name });
+  switch (mesh.round?.type) {
+    case 'cau':
+      return [part('surface', 'Mặt cầu')];
+    case 'non':
+      return [part('side', 'Mặt xung quanh'), part('base', 'Mặt đáy')];
+    case 'tru':
+      return [part('side', 'Mặt xung quanh'), part('base', 'Đáy dưới'), part('top', 'Đáy trên')];
+    default:
+      return mesh.faces.map((face) => {
+        const ids = face.map((i) => mesh.vertices[i].id);
+        return { key: faceKey(...ids), label: `Mặt (${face.map((i) => mesh.vertices[i].name).join('')})`, ids };
+      });
   }
 }
 
@@ -146,8 +289,15 @@ export interface ScenePoint {
 }
 
 /** Vị trí của một điểm; null nếu không xác định được (vd: hai đường không còn cắt nhau) */
-function locate(spec: PointSpec, refs: Vec3[]): Vec3 | null {
+function locate(spec: PointSpec, refs: Vec3[], round?: RoundShape): Vec3 | null {
   switch (spec.type) {
+    case 'rim': {
+      if (!round) return null;
+      const angle = spec.t * 2 * Math.PI;
+      return add(refs[0], [round.r * Math.cos(angle), 0, round.r * Math.sin(angle)]);
+    }
+    case 'disk':
+      return round ? add(refs[0], [round.r * spec.u, 0, round.r * spec.v]) : null;
     case 'free':
       return spec.at;
     case 'on':
@@ -171,7 +321,7 @@ function locate(spec: PointSpec, refs: Vec3[]): Vec3 | null {
 
 /** Số điểm tham chiếu mỗi loại điểm cần có */
 export const refCountOk = (type: ExtraPoint['type'], count: number) =>
-  type === undefined ? count >= 2 : count === { free: 0, on: 2, face: 3, 'line-line': 4, 'line-plane': 5 }[type];
+  type === undefined ? count >= 2 : count === { free: 0, on: 2, face: 3, 'line-line': 4, 'line-plane': 5, rim: 1, disk: 1 }[type];
 
 /** Tọa độ mọi điểm: đỉnh của khối và các điểm thêm vào (điểm sau có thể tham chiếu điểm trước) */
 export function resolvePoints(doc: SolidDoc, mesh: SolidMesh = buildMesh(doc)): ScenePoint[] {
@@ -180,7 +330,7 @@ export function resolvePoints(doc: SolidDoc, mesh: SolidMesh = buildMesh(doc)): 
   for (const extra of doc.points) {
     const refs = (extra.of as string[]).map((id) => byId.get(id));
     if (!refCountOk(extra.type, refs.length) || refs.some((r) => !r)) continue;
-    const p = locate(extra, refs.map((r) => r!.p));
+    const p = locate(extra, refs.map((r) => r!.p), mesh.round);
     if (!p) continue;
     const point = { id: extra.id, name: extra.name, p, extra: true };
     out.push(point);
@@ -207,11 +357,12 @@ export interface AddResult {
 
 /** Thêm một điểm. Không thêm nếu không xác định được vị trí hoặc chỗ đó đã có điểm. */
 export function addPoint(doc: SolidDoc, spec: PointSpec, preferred: string[] = POINT_NAMES): AddResult {
-  const points = resolvePoints(doc);
+  const mesh = buildMesh(doc);
+  const points = resolvePoints(doc, mesh);
   const refs = (spec.of as string[]).map((id) => points.find((p) => p.id === id));
   const failed = { doc, id: null, added: false };
   if (!refCountOk(spec.type, refs.length) || refs.some((r) => !r)) return failed;
-  const p = locate(spec, refs.map((r) => r!.p));
+  const p = locate(spec, refs.map((r) => r!.p), mesh.round);
   if (!p) return failed;
   const existing = points.find((q) => samePlace(q.p, p));
   if (existing) return { doc, id: existing.id, added: false };
@@ -243,7 +394,9 @@ export function movePoint(doc: SolidDoc, id: string, change: { at?: Vec3; t?: nu
       if (p.id !== id) return p;
       if (p.type === 'free' && change.at) return { ...p, at: change.at.map((n) => clamp(n, -MAX_COORD, MAX_COORD)) as Vec3 };
       if (p.type === 'on' && change.t !== undefined) return { ...p, t: clamp(change.t, 0, 1) };
-      if (p.type === 'face') return { ...p, u: change.u ?? p.u, v: change.v ?? p.v };
+      if (p.type === 'face' || p.type === 'disk') return { ...p, u: change.u ?? p.u, v: change.v ?? p.v };
+      // Góc trên đường tròn đi vòng quanh được
+      if (p.type === 'rim' && change.t !== undefined) return { ...p, t: ((change.t % 1) + 1) % 1 };
       return p;
     }),
   };
@@ -284,7 +437,7 @@ export function intersectLinePlane(a: Vec3, b: Vec3, c: Vec3, d: Vec3, e: Vec3):
   return { ok: true, p: add(a, scale(u, t)), t, s: 0 };
 }
 
-/** Các cặp đỉnh đã là cạnh của khối */
+/** Các cặp đỉnh đã được vẽ sẵn: cạnh của khối đa diện, trục và bán kính của khối tròn */
 export function meshEdges(mesh: SolidMesh): [string, string][] {
   const seen = new Map<string, [string, string]>();
   for (const face of mesh.faces) {
@@ -294,7 +447,7 @@ export function meshEdges(mesh: SolidMesh): [string, string][] {
       seen.set(`${lo}-${hi}`, [mesh.vertices[lo].id, mesh.vertices[hi].id]);
     });
   }
-  return [...seen.values()];
+  return [...seen.values(), ...mesh.lines];
 }
 
 /** Nối hai điểm. Bỏ qua nếu trùng cạnh của khối hoặc đoạn đã có. */
@@ -313,18 +466,24 @@ export function removePoint(doc: SolidDoc, id: string): SolidDoc {
   const gone = new Set([id]);
   for (const p of doc.points) if ((p.of as string[]).some((ref) => gone.has(ref))) gone.add(p.id);
   const labelOffsets = Object.fromEntries(Object.entries(doc.labelOffsets).filter(([key]) => !gone.has(key)));
+  // Mã điểm có thể được dùng lại, nên phải bỏ cả màu và trạng thái ẩn của những thứ vừa xóa
+  const looks = Object.fromEntries(Object.entries(doc.looks).filter(([key]) => !key.slice(2).split('|').some((ref) => gone.has(ref))));
   return {
     ...doc,
     points: doc.points.filter((p) => !gone.has(p.id)),
     segments: doc.segments.filter((s) => !gone.has(s.from) && !gone.has(s.to)),
     labelOffsets,
+    looks,
   };
 }
 
-export const removeSegment = (doc: SolidDoc, id: string): SolidDoc => ({
-  ...doc,
-  segments: doc.segments.filter((s) => s.id !== id),
-});
+export function removeSegment(doc: SolidDoc, id: string): SolidDoc {
+  const segment = doc.segments.find((s) => s.id === id);
+  if (!segment) return doc;
+  const looks = { ...doc.looks };
+  delete looks[lineKey(segment.from, segment.to)];
+  return { ...doc, segments: doc.segments.filter((s) => s.id !== id), looks };
+}
 
 /* ------------------------------ Lịch sử ------------------------------ */
 

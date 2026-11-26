@@ -1,6 +1,6 @@
 /** Công cụ hình học không gian */
 import React, { useEffect, useReducer, useRef, useState } from 'react';
-import { CircleDot, Copy, Crosshair, Dot, Download, FolderOpen, House, Minus, Move3d, Pause, Play, Redo2, Rotate3d, Save, Target, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { CircleDot, Copy, Crosshair, Dot, Download, Eye, EyeOff, FolderOpen, House, Minus, Move3d, PaintBucket, Pause, Play, Redo2, Rotate3d, Save, Target, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { toolHref, subjectHref } from '../../../app/router';
 import { toolsOf, type ToolId } from '../../registry';
 import {
@@ -9,23 +9,30 @@ import {
   addPoint,
   addSegment,
   createDoc,
+  hasHidden,
   historyReducer,
   initHistory,
+  isRound,
   movePoint,
   removePoint,
   removeSegment,
   resolvePoints,
+  setFills,
+  setLook,
+  showAll,
   type PointSpec,
   type SolidDoc,
 } from './model';
-import { SGK_VIEW, roundYaw, type Frame, type Scene, type View } from './scene';
+import { SGK_VIEW, buildScene, effectiveView, roundYaw, type Frame, type Scene, type View } from './scene';
 import { useAutoRotate } from './useAutoRotate';
-import { basePlanePoint, freePosition, pickFace, pickLine, pickOnObject, type ScreenPoint } from './picking';
+import { basePlanePoint, freePosition, pickFace, pickItem, pickLine, pickOnObject, type ScreenPoint } from './picking';
 import { EMPTY_PICK, applyPick, intersectHint, type IntersectMode, type IntersectPick, type PickInput } from './intersect';
 import { copyScene, downloadBlob, sceneToPng, type DrawStyle } from './exportImage';
 import { parseProject, serializeProject } from './projectFile';
 import { SolidCanvas, type SolidTool } from './SolidCanvas';
 import { SolidPanel } from './SolidPanel';
+import { Swatches } from './Swatches';
+import { PALETTE } from './palette';
 
 interface ToolInfo {
   id: SolidTool;
@@ -36,9 +43,11 @@ interface ToolInfo {
 
 const ROTATE: ToolInfo = { id: 'rotate', label: 'Xoay', hint: 'Kéo để xoay hình, kéo chữ để dời nhãn, kéo điểm để dời điểm (Esc)', icon: <Rotate3d className="w-5 h-5" /> };
 const SEGMENT: ToolInfo = { id: 'segment', label: 'Đoạn thẳng', hint: 'Bấm hai điểm để nối', icon: <Minus className="w-5 h-5" /> };
+const PAINT: ToolInfo = { id: 'paint', label: 'Tô màu', hint: 'Tô màu điểm, đoạn, đường tròn và mặt', icon: <PaintBucket className="w-5 h-5" /> };
+const HIDE: ToolInfo = { id: 'hide', label: 'Ẩn/hiện', hint: 'Ẩn hoặc hiện điểm, đoạn, đường tròn', icon: <EyeOff className="w-5 h-5" /> };
 const POINT_TOOLS: ToolInfo[] = [
   { id: 'free', label: 'Điểm tự do', hint: 'Đặt điểm ở vị trí bất kỳ', icon: <Move3d className="w-5 h-5" /> },
-  { id: 'on', label: 'Điểm trên đối tượng', hint: 'Điểm thuộc cạnh, đoạn thẳng hoặc mặt', icon: <CircleDot className="w-5 h-5" /> },
+  { id: 'on', label: 'Điểm trên đối tượng', hint: 'Điểm thuộc cạnh, đoạn thẳng, đường tròn hoặc mặt', icon: <CircleDot className="w-5 h-5" /> },
   { id: 'intersect', label: 'Giao điểm', hint: 'Đường cắt đường, đường cắt mặt phẳng', icon: <Crosshair className="w-5 h-5" /> },
   { id: 'midpoint', label: 'Trung điểm', hint: 'Bấm hai điểm để lấy trung điểm', icon: <Dot className="w-6 h-6" strokeWidth={4} /> },
 ];
@@ -49,6 +58,10 @@ export const SolidApp: React.FC = () => {
   const [history, dispatch] = useReducer(historyReducer, undefined, () => initHistory(createDoc('chop-tu-giac')));
   const { doc } = history;
   const [view, setView] = useState<View>(SGK_VIEW);
+  /** Góc nhìn đang vẽ trên bảng (khối tròn có kiểu sách giáo khoa riêng) */
+  const shown = effectiveView(doc.kind, view);
+  /** Màu đang chọn trong công cụ tô màu; null: bỏ màu */
+  const [paint, setPaint] = useState<string | null>(PALETTE[0].value);
   const [zoom, setZoom] = useState(1);
   const [style, setStyle] = useState<DrawStyle>({ lineWidth: 2, fontSize: 22, showVertexDots: false });
   const [tool, setTool] = useState<SolidTool>('rotate');
@@ -86,6 +99,8 @@ export const SolidApp: React.FC = () => {
   const toggleSpin = () => {
     if (spinning) return stopSpin();
     selectTool('rotate');
+    // Xoay tiếp từ đúng góc đang thấy
+    if (isRound(doc.kind)) setView((v) => effectiveView(doc.kind, v));
     setSpinning(true);
   };
   const timeTravel = (type: 'undo' | 'redo') => {
@@ -171,23 +186,30 @@ export const SolidApp: React.FC = () => {
 
   /** Bấm vào hình (không trúng điểm có sẵn) */
   const handleClickAt = (target: ScreenPoint, frame: Frame) => {
-    if (tool === 'free') {
+    if (tool === 'paint' || tool === 'hide') {
+      const options = { includeOff: tool === 'hide', faces: tool === 'paint', fontSize: frame.fontSize };
+      const hit = pickItem(buildScene(doc, shown, frame), target, options);
+      if (!hit) return notify(tool === 'paint' ? 'Hãy bấm vào một điểm, đoạn, đường tròn hoặc mặt' : 'Hãy bấm vào một điểm, đoạn hoặc đường tròn', true);
+      if (hit.type === 'face') change((d) => setFills(d, [hit.key], paint));
+      else if (tool === 'paint') change((d) => setLook(d, hit.key, { color: paint }));
+      else change((d) => setLook(d, hit.key, { hidden: !d.looks[hit.key]?.hidden }));
+    } else if (tool === 'free') {
       if (freeOnBase) {
-        const spec = basePlanePoint(doc, view, frame, target);
+        const spec = basePlanePoint(doc, shown, frame, target);
         return spec ? createPoint(spec) : notify('Đang nhìn gần ngang mặt đáy — hãy xoay hình để nhìn rõ mặt đáy', true);
       }
-      const at = freePosition(view, frame, target);
+      const at = freePosition(shown, frame, target);
       if (at) createPoint({ type: 'free', of: [], at });
     } else if (tool === 'on') {
-      const spec = pickOnObject(doc, view, frame, target);
+      const spec = pickOnObject(doc, shown, frame, target);
       if (spec) createPoint(spec);
-      else notify('Hãy bấm vào một cạnh, đoạn thẳng hoặc mặt của khối', true);
+      else notify(isRound(doc.kind) ? 'Hãy bấm vào một đoạn thẳng, đường tròn hoặc mặt tròn' : 'Hãy bấm vào một cạnh, đoạn thẳng hoặc mặt của khối', true);
     } else if (tool === 'intersect') {
       if (intersectMode === 'line-plane' && intersectPick.first) {
-        const face = pickFace(doc, view, frame, target);
+        const face = pickFace(doc, shown, frame, target);
         if (face) intersect({ face: face.ids });
       } else {
-        const line = pickLine(doc, view, frame, target);
+        const line = pickLine(doc, shown, frame, target);
         if (line) intersect({ line: [line.from, line.to] });
       }
     }
@@ -239,16 +261,26 @@ export const SolidApp: React.FC = () => {
   };
 
   const activePointTool = POINT_TOOLS.find((t) => t.id === tool);
-  const status =
-    tool === 'free'
-      ? 'Bấm vào hình để đặt điểm'
-      : tool === 'on'
-        ? 'Bấm vào cạnh, đoạn thẳng hoặc mặt'
-        : tool === 'intersect'
-          ? intersectHint(intersectMode, intersectPick)
-          : picked.length > 0
-            ? 'Chọn điểm thứ hai'
-            : 'Chọn điểm thứ nhất';
+  const statusText = () => {
+    switch (tool) {
+      case 'free':
+        return 'Bấm vào hình để đặt điểm';
+      case 'on':
+        return isRound(doc.kind) ? 'Bấm vào đoạn thẳng, đường tròn hoặc mặt tròn' : 'Bấm vào cạnh, đoạn thẳng hoặc mặt';
+      case 'intersect':
+        // Khối tròn không có mặt đa giác nên mặt phẳng được chọn bằng ba điểm
+        return isRound(doc.kind) && intersectMode === 'line-plane' && intersectPick.first
+          ? `Bấm 3 điểm xác định mặt phẳng (đã chọn ${intersectPick.points.length})`
+          : intersectHint(intersectMode, intersectPick);
+      case 'paint':
+        return paint ? 'Chọn màu, bấm để tô' : 'Bấm để bỏ màu';
+      case 'hide':
+        return 'Bấm để ẩn, bấm lần nữa để hiện';
+      default:
+        return picked.length > 0 ? 'Chọn điểm thứ hai' : 'Chọn điểm thứ nhất';
+    }
+  };
+  const status = statusText();
   const statusOption = (active: boolean, label: string, onClick: () => void) => (
     <button type="button" aria-pressed={active} onClick={onClick} className={`h-8 px-3 rounded-full text-xs font-semibold ${active ? 'bg-white text-blue-700' : 'text-white hover:bg-blue-500'}`}>
       {label}
@@ -256,7 +288,7 @@ export const SolidApp: React.FC = () => {
   );
 
   const toolbarButton = (active: boolean) =>
-    `shrink-0 flex flex-col items-center justify-center gap-1 flex-1 md:flex-none short:flex-none h-14 md:w-16 short:w-12 short:h-11 rounded-xl text-[10px] font-semibold leading-tight text-center transition-colors disabled:opacity-40 ${
+    `shrink-0 flex flex-col items-center justify-center gap-1 flex-1 md:flex-none short:flex-none min-w-0 h-14 md:w-16 short:w-12 short:h-9.5 rounded-xl text-[10px] font-semibold leading-tight text-center transition-colors disabled:opacity-40 ${
       active ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
     }`;
 
@@ -300,7 +332,7 @@ export const SolidApp: React.FC = () => {
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row short:flex-row">
-        <nav aria-label="Công cụ vẽ" className="order-3 md:order-1 short:order-1 shrink-0 flex md:flex-col short:flex-col items-center gap-1 p-1.5 md:w-20 short:w-15 overflow-auto no-scrollbar border-t md:border-t-0 md:border-r short:border-t-0 short:border-r border-slate-200 bg-white">
+        <nav aria-label="Công cụ vẽ" className="order-3 md:order-1 short:order-1 shrink-0 flex md:flex-col short:flex-col items-center gap-1 p-1.5 md:w-20 short:w-15 short:gap-0.5 short:p-1 overflow-auto no-scrollbar border-t md:border-t-0 md:border-r short:border-t-0 short:border-r border-slate-200 bg-white">
           <button type="button" onClick={() => selectTool('rotate')} title={ROTATE.hint} aria-pressed={tool === 'rotate'} className={toolbarButton(tool === 'rotate')}>
             {ROTATE.icon}
             <span className="short:hidden">{ROTATE.label}</span>
@@ -313,6 +345,12 @@ export const SolidApp: React.FC = () => {
             {SEGMENT.icon}
             <span className="short:hidden">{SEGMENT.label}</span>
           </button>
+          {[PAINT, HIDE].map((t) => (
+            <button key={t.id} type="button" onClick={() => selectTool(t.id)} title={t.hint} aria-label={t.label} aria-pressed={tool === t.id} className={toolbarButton(tool === t.id)}>
+              {t.icon}
+              <span className="short:hidden">{t.label}</span>
+            </button>
+          ))}
           <span className="hidden md:block flex-1" />
           <button type="button" onClick={() => timeTravel('undo')} disabled={history.past.length === 0} title="Hoàn tác (Ctrl+Z)" className={toolbarButton(false)}>
             <Undo2 className="w-5 h-5" />
@@ -351,6 +389,20 @@ export const SolidApp: React.FC = () => {
                     ))}
                   </span>
                 )}
+                {/* Màn hình dọc hẹp: bảng màu nằm hàng riêng bên dưới, nút đóng ở cạnh lời nhắc */}
+                {tool === 'paint' && (
+                  <span className="flex justify-center min-w-0 max-sm:order-last max-sm:basis-full">
+                    <span className="flex min-w-0 rounded-2xl bg-white">
+                      <Swatches compact value={paint} onChange={setPaint} noneLabel="Bỏ màu" label="Màu tô" />
+                    </span>
+                  </span>
+                )}
+                {tool === 'hide' && hasHidden(doc) && (
+                  <button type="button" onClick={() => change(showAll)} className="h-8 px-3 rounded-full bg-white text-blue-700 text-xs font-semibold flex items-center gap-1.5">
+                    <Eye className="w-4 h-4" />
+                    Hiện tất cả
+                  </button>
+                )}
                 <button type="button" onClick={() => selectTool('rotate')} aria-label="Xong, trở về xoay hình" title="Xong (Esc)" className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-blue-500">
                   <X className="w-4 h-4" />
                 </button>
@@ -360,7 +412,8 @@ export const SolidApp: React.FC = () => {
           <div className="relative flex-1 min-h-0" onPointerDownCapture={() => (held.current = true)}>
             <SolidCanvas
               doc={doc}
-              view={view}
+              view={shown}
+              paint={paint}
               zoom={zoom}
               style={style}
               tool={tool}
@@ -416,6 +469,7 @@ export const SolidApp: React.FC = () => {
                     </span>
                   </button>
                 ))}
+                {!isRound(doc.kind) && (
                 <button
                   type="button"
                   role="menuitem"
@@ -434,6 +488,7 @@ export const SolidApp: React.FC = () => {
                     <span className="text-xs text-slate-500">Thêm tâm của mặt đáy</span>
                   </span>
                 </button>
+                )}
               </div>
             </>
           )}
@@ -465,6 +520,9 @@ export const SolidApp: React.FC = () => {
               change((d) => removePoint(d, id));
             }}
             onRemoveSegment={(id) => change((d) => removeSegment(d, id))}
+            onLook={(key, next) => change((d) => setLook(d, key, next), next.color !== undefined ? `color-${key}` : undefined)}
+            onFill={(keys, color) => change((d) => setFills(d, keys, color), `fill-${keys.join()}`)}
+            onShowAll={() => change(showAll)}
             onResetLabels={() => change((d) => ({ ...d, labelOffsets: {} }))}
             onViewChange={(next) => {
               setSpinning(false);

@@ -1,5 +1,5 @@
 /** Lưu và mở tệp hình không gian (.edukit3d) */
-import { MAX_COORD, MAX_DIM, MIN_DIM, SOLIDS, addSegment, buildMesh, createDoc, refCountOk, type ExtraPoint, type SolidDoc, type Vec3 } from './model';
+import { MAX_COORD, MAX_DIM, MIN_DIM, SOLIDS, addSegment, buildMesh, createDoc, curveKey, lineKey, meshEdges, pointKey, refCountOk, roundCurves, setFills, setLook, solidFaces, type ExtraPoint, type SolidDoc, type Vec3 } from './model';
 import { SGK_VIEW, type View } from './scene';
 
 const APP_NAME = 'EduKit Solid';
@@ -11,6 +11,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 const finite = (v: unknown, fallback: number, min: number, max: number) =>
   typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
 const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, 12) : null);
+const colorOf = (v: unknown) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : null);
 
 /** Đọc một điểm thêm vào; null nếu thiếu dữ liệu */
 function parsePoint(item: Record<string, unknown>, known: Set<string>): ExtraPoint | null {
@@ -31,6 +32,12 @@ function parsePoint(item: Record<string, unknown>, known: Set<string>): ExtraPoi
     case 'on':
       return refCountOk(type, of.length) && number(item.t) ? { ...base, type, of, t: finite(item.t, 0.5, 0, 1) } : null;
     case 'face':
+      return refCountOk(type, of.length) && number(item.u) && number(item.v)
+        ? { ...base, type, of, u: finite(item.u, 0, -50, 50), v: finite(item.v, 0, -50, 50), ...(item.open === true ? { open: true } : {}) }
+        : null;
+    case 'rim':
+      return refCountOk(type, of.length) && number(item.t) ? { ...base, type, of, t: finite(item.t, 0, 0, 1) } : null;
+    case 'disk':
       return refCountOk(type, of.length) && number(item.u) && number(item.v)
         ? { ...base, type, of, u: finite(item.u, 0, -50, 50), v: finite(item.v, 0, -50, 50), ...(item.open === true ? { open: true } : {}) }
         : null;
@@ -84,6 +91,22 @@ export function parseProject(content: string): { doc: SolidDoc; view: View } {
     for (const [id, o] of Object.entries(raw.labelOffsets)) {
       if (known.has(id) && isRecord(o)) doc.labelOffsets[id] = { x: finite(o.x, 0, -20, 20), y: finite(o.y, 0, -20, 20) };
     }
+  }
+
+  // Màu và trạng thái ẩn: chỉ nhận khóa của những thứ có trên hình
+  const mesh = buildMesh(doc);
+  const looked = new Set([
+    ...[...known].map(pointKey),
+    ...[...meshEdges(mesh), ...doc.segments.map((s) => [s.from, s.to] as const)].map(([a, b]) => lineKey(a, b)),
+    ...(mesh.round ? [...roundCurves(mesh).map((c) => curveKey(c.id)), curveKey('outline')] : []),
+  ]);
+  for (const [key, look] of Object.entries(isRecord(raw.looks) ? raw.looks : {})) {
+    if (looked.has(key) && isRecord(look)) doc = setLook(doc, key, { color: colorOf(look.color), hidden: look.hidden === true });
+  }
+  const fills = isRecord(raw.fills) ? raw.fills : {};
+  for (const { key } of solidFaces(mesh)) {
+    const color = colorOf(fills[key]);
+    if (color) doc = setFills(doc, [key], color);
   }
 
   const v = isRecord(data.view) ? data.view : {};

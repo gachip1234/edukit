@@ -1,5 +1,6 @@
 /** Chiếu hình 3D xuống mặt phẳng, xác định nét khuất và đặt nhãn. */
-import { buildMesh, meshEdges, resolvePoints, type SolidDoc, type SolidMesh } from './model';
+import { buildMesh, curveKey, isRound, lineKey, meshEdges, pointKey, resolvePoints, roundCurves, solidFaces, type SolidDoc, type SolidKind, type SolidMesh } from './model';
+import { circlePoint, hiddenByRound, sideLines, splitByVisibility, type Piece } from './round';
 import { cross, dot, lerp, sub, type Vec3 } from './vec';
 
 export interface View {
@@ -12,6 +13,13 @@ export interface View {
 }
 
 export const SGK_VIEW: View = { mode: 'sgk', yaw: -25, tilt: 20 };
+
+/**
+ * Góc nhìn thật sự dùng để vẽ. Khối tròn trong sách giáo khoa được vẽ nhìn chính diện hơi từ trên xuống
+ * (đường tròn thành elip nằm ngang), không dùng phép chiếu xiên.
+ */
+export const effectiveView = (kind: SolidKind, view: View): View =>
+  isRound(kind) && view.mode === 'sgk' ? { mode: 'free', yaw: 0, tilt: 18 } : view;
 
 /** Phép chiếu xiên: cạnh theo chiều sâu vẽ nghiêng 45° và dài bằng một nửa */
 const DEPTH_SCALE = 0.5;
@@ -114,7 +122,35 @@ export function hiddenRange(p: Vec3, q: Vec3, planes: Plane[], toViewer: Vec3): 
 /** Điểm P có bị khối che không */
 export const isHidden = (p: Vec3, planes: Plane[], toViewer: Vec3) => hiddenRange(p, p, planes, toViewer) !== null;
 
-export interface SceneLine {
+/** Các khúc thấy / khuất của đoạn PQ do khối che */
+export function segmentPieces(mesh: SolidMesh, planes: Plane[], toViewer: Vec3, p: Vec3, q: Vec3): Piece[] {
+  const { round } = mesh;
+  if (round) return splitByVisibility((s) => hiddenByRound(lerp(p, q, s), round, toViewer));
+  // Khối đa diện: tính chính xác, một đoạn bị cắt thành tối đa ba khúc
+  const range = hiddenRange(p, q, planes, toViewer);
+  const snap = (s: number) => (s < 2e-3 ? 0 : s > 1 - 2e-3 ? 1 : s);
+  const [s0, s1] = range ? [snap(range[0]), snap(range[1])] : [1, 1];
+  return [
+    { from: 0, to: s0, hidden: false },
+    { from: s0, to: s1, hidden: true },
+    { from: s1, to: 1, hidden: false },
+  ].filter((piece) => piece.to > piece.from);
+}
+
+export interface XY {
+  x: number;
+  y: number;
+}
+
+/** Màu riêng (nếu có) và trạng thái người dùng cho ẩn */
+interface Styled {
+  /** Khóa trong doc.looks */
+  look: string;
+  color?: string;
+  off: boolean;
+}
+
+export interface SceneLine extends Styled {
   key: string;
   from: string;
   to: string;
@@ -122,10 +158,26 @@ export interface SceneLine {
   y1: number;
   x2: number;
   y2: number;
+  /** Nét khuất (vẽ đứt) */
   hidden: boolean;
 }
 
-export interface SceneDot {
+/** Một khúc của đường tròn hoặc nét bao khối tròn */
+export interface SceneCurve extends Styled {
+  key: string;
+  points: XY[];
+  hidden: boolean;
+}
+
+export interface SceneFace {
+  key: string;
+  points: XY[];
+  color?: string;
+  /** Mặt nằm trên thì được bấm trúng trước: 2 mặt phẳng quay về người nhìn, 1 mặt cong, 0 mặt khuất */
+  rank: number;
+}
+
+export interface SceneDot extends Styled {
   id: string;
   name: string;
   extra: boolean;
@@ -136,6 +188,8 @@ export interface SceneDot {
 }
 
 export interface Scene {
+  faces: SceneFace[];
+  curves: SceneCurve[];
   lines: SceneLine[];
   dots: SceneDot[];
 }
@@ -149,18 +203,42 @@ export interface Frame {
 }
 
 /** Bán kính hình cầu bao quanh khối (dùng để canh tỉ lệ ổn định khi xoay) */
-export const boundingRadius = (mesh: SolidMesh) => Math.max(...mesh.vertices.map((v) => Math.hypot(...v.p)));
+export function boundingRadius({ vertices, round }: SolidMesh) {
+  if (!round) return Math.max(...vertices.map((v) => Math.hypot(...v.p)));
+  return round.type === 'cau' ? round.r : Math.hypot(round.r, (round.y1 - round.y0) / 2);
+}
+
+/** Bao lồi của các điểm trên màn hình */
+function hull(points: XY[]): XY[] {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  const turn = (o: XY, a: XY, b: XY) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const half = (list: XY[]) => {
+    const out: XY[] = [];
+    for (const p of list) {
+      while (out.length > 1 && turn(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    return out.slice(0, -1);
+  };
+  return [...half(sorted), ...half(sorted.reverse())];
+}
+
+const CIRCLE_STEPS = 180;
+const turns = (n: number) => Array.from({ length: n }, (_, i) => i / n);
 
 export function buildScene(doc: SolidDoc, view: View, frame: Frame): Scene {
   const mesh = buildMesh(doc);
+  const { round } = mesh;
   const planes = facePlanes(mesh);
   const projection = makeProjection(view);
+  const { toViewer } = projection;
   const points = resolvePoints(doc, mesh);
   const byId = new Map(points.map((p) => [p.id, p]));
   const screen = (p: Vec3) => {
     const q = projection.project(p);
     return { x: frame.cx + q.x * frame.scale, y: frame.cy + q.y * frame.scale };
   };
+  const styled = (look: string): Styled => ({ look, color: doc.looks[look]?.color, off: doc.looks[look]?.hidden === true });
 
   const pairs = [
     ...meshEdges(mesh).map(([from, to]) => ({ key: `edge-${from}-${to}`, from, to })),
@@ -171,35 +249,83 @@ export function buildScene(doc: SolidDoc, view: View, frame: Frame): Scene {
     const p = byId.get(from);
     const q = byId.get(to);
     if (!p || !q) continue;
-    // Một đoạn có thể thấy một phần, khuất một phần → cắt thành tối đa ba mảnh
-    const range = hiddenRange(p.p, q.p, planes, projection.toViewer);
-    const snap = (s: number) => (s < 2e-3 ? 0 : s > 1 - 2e-3 ? 1 : s);
-    const [s0, s1] = range ? [snap(range[0]), snap(range[1])] : [1, 1];
-    const pieces = [
-      { from: 0, to: s0, hidden: false },
-      { from: s0, to: s1, hidden: true },
-      { from: s1, to: 1, hidden: false },
-    ].filter((piece) => piece.to > piece.from);
+    const pieces = segmentPieces(mesh, planes, toViewer, p.p, q.p);
     pieces.forEach((piece, i) => {
       const a = screen(lerp(p.p, q.p, piece.from));
       const b = screen(lerp(p.p, q.p, piece.to));
-      lines.push({ key: pieces.length > 1 ? `${key}#${i}` : key, from, to, x1: a.x, y1: a.y, x2: b.x, y2: b.y, hidden: piece.hidden });
+      lines.push({ key: pieces.length > 1 ? `${key}#${i}` : key, from, to, x1: a.x, y1: a.y, x2: b.x, y2: b.y, hidden: piece.hidden, ...styled(lineKey(from, to)) });
     });
   }
   // Nét khuất vẽ trước để nét thấy nằm đè lên trên
   lines.sort((a, b) => Number(b.hidden) - Number(a.hidden));
 
+  const curves: SceneCurve[] = [];
+  if (round) {
+    for (const curve of roundCurves(mesh)) {
+      const center = byId.get(curve.center)!.p;
+      const at = (t: number) => circlePoint(center, round.r, t);
+      const pieces = splitByVisibility((t) => hiddenByRound(at(t), round, toViewer), CIRCLE_STEPS);
+      // Đường tròn khép kín: nối khúc cuối với khúc đầu nếu cùng thấy hoặc cùng khuất
+      if (pieces.length > 1 && pieces[0].hidden === pieces[pieces.length - 1].hidden) {
+        const last = pieces.pop()!;
+        pieces[0] = { ...pieces[0], from: last.from - 1 };
+      }
+      pieces.forEach(({ from, to, hidden }, i) => {
+        const steps = Math.max(2, Math.ceil((to - from) * CIRCLE_STEPS));
+        const path = Array.from({ length: steps + 1 }, (_, k) => screen(at(from + ((to - from) * k) / steps)));
+        curves.push({ key: `${curve.id}#${i}`, points: path, hidden, ...styled(curveKey(curve.id)) });
+      });
+    }
+    if (round.type === 'cau') {
+      const c = screen([0, 0, 0]);
+      const R = round.r * frame.scale;
+      const path = [...turns(CIRCLE_STEPS), 1].map((t) => ({ x: c.x + R * Math.cos(2 * Math.PI * t), y: c.y + R * Math.sin(2 * Math.PI * t) }));
+      curves.push({ key: 'outline#0', points: path, hidden: false, ...styled(curveKey('outline')) });
+    } else {
+      sideLines(round, toViewer).forEach(([a, b], i) => {
+        curves.push({ key: `outline#${i}`, points: [screen(a), screen(b)], hidden: false, ...styled(curveKey('outline')) });
+      });
+    }
+    curves.sort((a, b) => Number(b.hidden) - Number(a.hidden));
+  }
+
+  const faces: SceneFace[] = solidFaces(mesh).map((face, index) => {
+    const color = doc.fills[face.key];
+    if (face.ids) {
+      const front = dot(planes[index].n, toViewer) > 1e-6;
+      return { key: face.key, color, points: face.ids.map((id) => screen(byId.get(id)!.p)), rank: front ? 2 : 0 };
+    }
+    const { r, y0, y1 } = round!;
+    const ring = (y: number) => turns(90).map((t) => screen(circlePoint([0, y, 0], r, t)));
+    if (face.part === 'base' || face.part === 'top') {
+      const front = face.part === 'top' ? toViewer[1] > 1e-6 : toViewer[1] < -1e-6;
+      return { key: face.key, color, points: ring(face.part === 'top' ? y1 : y0), rank: front ? 2 : 0 };
+    }
+    let outline: XY[];
+    if (face.part === 'surface') {
+      const c = screen([0, 0, 0]);
+      outline = turns(120).map((t) => ({ x: c.x + r * frame.scale * Math.cos(2 * Math.PI * t), y: c.y + r * frame.scale * Math.sin(2 * Math.PI * t) }));
+    } else {
+      outline = hull([...ring(y0), ...(round!.type === 'tru' ? ring(y1) : [screen([0, y1, 0])])]);
+    }
+    return { key: face.key, color, points: outline, rank: 1 };
+  });
+  // Mặt phía sau tô trước
+  faces.sort((a, b) => a.rank - b.rank);
+
   const vertexScreen = mesh.vertices.map((v) => screen(v.p));
-  const middle = {
-    x: vertexScreen.reduce((s, p) => s + p.x, 0) / vertexScreen.length,
-    y: vertexScreen.reduce((s, p) => s + p.y, 0) / vertexScreen.length,
-  };
+  const middle = round
+    ? screen([0, 0, 0])
+    : {
+        x: vertexScreen.reduce((s, p) => s + p.x, 0) / vertexScreen.length,
+        y: vertexScreen.reduce((s, p) => s + p.y, 0) / vertexScreen.length,
+      };
   const dots: SceneDot[] = points.map((p) => {
     const s = screen(p.p);
     let dx = s.x - middle.x;
     let dy = s.y - middle.y;
     // Điểm bên trong hình (tâm, trung điểm): đặt nhãn chéo xuống phải
-    if (p.extra && Math.hypot(dx, dy) < frame.scale * 0.8) [dx, dy] = [1, 1];
+    if ((p.extra || round) && Math.hypot(dx, dy) < frame.scale * 0.8) [dx, dy] = [1, 1];
     const length = Math.hypot(dx, dy) || 1;
     const gap = frame.fontSize * 0.95;
     const offset = doc.labelOffsets[p.id] ?? { x: 0, y: 0 };
@@ -211,8 +337,9 @@ export function buildScene(doc: SolidDoc, view: View, frame: Frame): Scene {
       y: s.y,
       labelX: s.x + (dx / length) * gap + offset.x * frame.scale,
       labelY: s.y + (dy / length) * gap + offset.y * frame.scale,
+      ...styled(pointKey(p.id)),
     };
   });
 
-  return { lines, dots };
+  return { faces, curves, lines, dots };
 }

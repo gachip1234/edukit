@@ -8,51 +8,70 @@ export interface DrawStyle {
 }
 
 export const INK = '#0f172a';
+/** Mặt được tô nhẹ: trong suốt 90% */
+export const FILL_OPACITY = 0.1;
 export const LABEL_FONT = "'Times New Roman', Times, serif";
 export const dashPattern = (lineWidth: number) => `${lineWidth * 3.5} ${lineWidth * 3}`;
+
+/** Điểm có chấm tròn: điểm thêm vào, điểm được chọn màu, hoặc khi bật chấm tại các đỉnh */
+export const hasDot = (d: { extra: boolean; color?: string }, style: DrawStyle) => d.extra || !!d.color || style.showVertexDots;
 
 const escapeXml = (s: string) =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /** Dựng SVG vừa khít nội dung. Hàm thuần, không đụng tới trang. */
 export function sceneToSvg(scene: Scene, style: DrawStyle, padding = 16) {
+  // Bỏ những thứ đang ẩn
+  const shownFaces = scene.faces.filter((f) => f.color);
+  const shownCurves = scene.curves.filter((c) => !c.off);
+  const shownLines = scene.lines.filter((l) => !l.off);
+  const shownDots = scene.dots.filter((d) => !d.off);
   const xs: number[] = [];
   const ys: number[] = [];
-  for (const l of scene.lines) {
+  for (const l of shownLines) {
     xs.push(l.x1, l.x2);
     ys.push(l.y1, l.y2);
   }
-  for (const d of scene.dots) {
+  for (const shape of [...shownFaces, ...shownCurves]) {
+    for (const p of shape.points) {
+      xs.push(p.x);
+      ys.push(p.y);
+    }
+  }
+  for (const d of shownDots) {
     const halfWidth = (style.fontSize * 0.65 * Math.max(1, d.name.length)) / 2;
     xs.push(d.x, d.labelX - halfWidth, d.labelX + halfWidth);
     ys.push(d.y, d.labelY - style.fontSize * 0.7, d.labelY + style.fontSize * 0.7);
+  }
+  // Ẩn hết thì vẫn ra một ảnh trống hợp lệ
+  if (xs.length === 0) {
+    xs.push(0);
+    ys.push(0);
   }
   const minX = Math.min(...xs) - padding;
   const minY = Math.min(...ys) - padding;
   const width = Math.max(...xs) + padding - minX;
   const height = Math.max(...ys) + padding - minY;
 
-  const lines = scene.lines
-    .map(
-      (l) =>
-        `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" stroke="${INK}" stroke-width="${style.lineWidth}" stroke-linecap="round"${
-          l.hidden ? ` stroke-dasharray="${dashPattern(style.lineWidth)}"` : ''
-        }/>`,
-    )
+  const path = (points: { x: number; y: number }[]) => points.map((p) => `${p.x},${p.y}`).join(' ');
+  const stroke = (color: string | undefined, hidden: boolean) =>
+    `stroke="${color ?? INK}" stroke-width="${style.lineWidth}" stroke-linecap="round"${hidden ? ` stroke-dasharray="${dashPattern(style.lineWidth)}"` : ''}`;
+  const faces = shownFaces.map((f) => `<polygon points="${path(f.points)}" fill="${f.color}" fill-opacity="${FILL_OPACITY}"/>`).join('');
+  const curves = shownCurves.map((c) => `<polyline points="${path(c.points)}" fill="none" ${stroke(c.color, c.hidden)}/>`).join('');
+  const lines = shownLines.map((l) => `<line x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}" ${stroke(l.color, l.hidden)}/>`).join('');
+  const dots = shownDots
+    .filter((d) => hasDot(d, style))
+    .map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${style.lineWidth * 1.6}" fill="${d.color ?? INK}"/>`)
     .join('');
-  const dots = scene.dots
-    .filter((d) => d.extra || style.showVertexDots)
-    .map((d) => `<circle cx="${d.x}" cy="${d.y}" r="${style.lineWidth * 1.6}" fill="${INK}"/>`)
-    .join('');
-  const labels = scene.dots
+  const labels = shownDots
     .map(
       (d) =>
-        `<text x="${d.labelX}" y="${d.labelY}" text-anchor="middle" dominant-baseline="central" font-family="${LABEL_FONT}" font-size="${style.fontSize}" font-style="italic" font-weight="bold" fill="${INK}">${escapeXml(d.name)}</text>`,
+        `<text x="${d.labelX}" y="${d.labelY}" text-anchor="middle" dominant-baseline="central" font-family="${LABEL_FONT}" font-size="${style.fontSize}" font-style="italic" font-weight="bold" fill="${d.color ?? INK}">${escapeXml(d.name)}</text>`,
     )
     .join('');
 
   const svg = (pixelRatio: number) =>
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width * pixelRatio}" height="${height * pixelRatio}" viewBox="${minX} ${minY} ${width} ${height}">${lines}${dots}${labels}</svg>`;
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width * pixelRatio}" height="${height * pixelRatio}" viewBox="${minX} ${minY} ${width} ${height}">${faces}${curves}${lines}${dots}${labels}</svg>`;
   return { svg, width, height };
 }
 
