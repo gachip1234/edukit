@@ -172,6 +172,9 @@ CẤU TRÚC JSON ĐẦU RA YÊU CẦU:
    - "MIDPOINT(B, C, M)"           → M là trung điểm của BC
    - "INTERSECT(A, D, B, E, H)"    → H là giao điểm của đường thẳng AD và BE (tự vẽ phần kéo dài nét đứt nếu cần)
    - "BISECTOR(B, A, C, D)"        → AD là phân giác của góc BAC (ĐỈNH A Ở GIỮA, giống cách viết góc BAC), D nằm trên BC (tự vẽ AD)
+   - "CIRCLE_RADIUS(c1, O, A, B)"  → đường tròn c1 tâm O, bán kính BẰNG ĐOẠN AB (vd "đường tròn tâm A bán kính AB" → "CIRCLE_RADIUS(c1, A, A, B)")
+   - "CIRCLE_THROUGH(c1, O, A)"    → đường tròn c1 tâm O đi qua điểm A
+   - "CIRCLE_DIAMETER(c1, A, B, O)" → đường tròn c1 đường kính AB, tâm O là trung điểm AB (tự tính O)
    - "TANGENTS(M, c1, A, B)"       → từ M kẻ 2 tiếp tuyến MA, MB tới đường tròn c1 (tự tính tiếp điểm A, B)
    - "DIAMETER(c1, A, C)"          → AC là đường kính của c1 (tự tính C đối xứng A qua tâm)
    - "SEGMENT(A, M)" / "SEGMENT_DASHED(A, M)" → đoạn thẳng AM (nét liền / nét đứt)
@@ -194,6 +197,9 @@ QUY TẮC BẮT BUỘC:
   Chỉ được bỏ qua các điểm do "commands" tự tính ra (chân đường cao "foot", trung điểm, giao điểm, tiếp điểm, đầu kia đường kính).
 - Chọn tọa độ đúng với giả thiết đề bài (vuông tại A, cân tại A, độ dài cạnh, điểm nằm trên đường tròn...) và có dáng tổng quát, dễ nhìn.
 - Điểm nằm trên đường tròn tâm O bán kính R phải có khoảng cách tới O đúng bằng R.
+- ĐƯỜNG TRÒN: tâm phải đúng tên điểm đề bài nêu ("tâm A" thì center là A, KHÔNG tự đổi thành O) và có tọa độ trong "points".
+  "circles" chỉ dùng khi bán kính là MỘT SỐ. Khi bán kính cho bằng đoạn thẳng, điểm đi qua hoặc đường kính thì dùng lệnh
+  CIRCLE_RADIUS / CIRCLE_THROUGH / CIRCLE_DIAMETER (không tự tính r, không ghi thêm đường tròn đó vào "circles").
 - Mỗi lệnh trong "commands" là MỘT CHUỖI đúng cú pháp như trên, KHÔNG bỏ sót tham số nào (đặc biệt là tên điểm mới ở cuối),
   đặt đúng tên điểm theo đề bài (đường cao AD → "PERPENDICULAR(A, B, C, D)"). Không lặp lại cùng một lệnh.
 - MỖI yếu tố đề bài nêu ra PHẢI có lệnh tương ứng trong "commands" (không được chỉ nhắc trong "reasoning"):
@@ -339,7 +345,7 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
           commands: {
             type: 'ARRAY',
             description:
-              'Lệnh dựng hình dạng chuỗi, đủ tham số theo đúng thứ tự, vd "PERPENDICULAR(A, B, C, H)", "MIDPOINT(B, C, M)", "INTERSECT(A, D, B, E, H)", "BISECTOR(B, A, C, D)" (phân giác góc BAC, đỉnh ở giữa), "TANGENTS(M, c1, A, B)", "DIAMETER(c1, A, C)", "SEGMENT(A, M)", "SEGMENT_DASHED(A, M)"',
+              'Lệnh dựng hình dạng chuỗi, đủ tham số theo đúng thứ tự, vd "CIRCLE_RADIUS(c1, A, A, B)" (tâm A bán kính AB), "CIRCLE_THROUGH(c1, O, A)", "CIRCLE_DIAMETER(c1, A, B, O)", "PERPENDICULAR(A, B, C, H)", "MIDPOINT(B, C, M)", "INTERSECT(A, D, B, E, H)", "BISECTOR(B, A, C, D)" (phân giác góc BAC, đỉnh ở giữa), "TANGENTS(M, c1, A, B)", "DIAMETER(c1, A, C)", "SEGMENT(A, M)", "SEGMENT_DASHED(A, M)"',
             items: { type: 'STRING' },
           },
         },
@@ -482,7 +488,10 @@ VÍ DỤ 2 — Đề: "Cho tam giác ABC nhọn nội tiếp đường tròn (O)
     // Bổ sung các lệnh dựng hình AI bỏ sót (đường cao, trung điểm, giao điểm...) dựa trên đề bài
     // (khi vẽ tiếp, đọc cả các yêu cầu trước để hiểu tên điểm đã dùng)
     const augmentText = continued ? [...context!.history, prompt].join('\n') : prompt;
-    const augmented = augmentWithProblemText(parsed, augmentText);
+    const augmented = augmentWithProblemText(parsed, augmentText, {
+      circleText: prompt,
+      keepCircles: continued ? context!.figure.circles : undefined,
+    });
     if (augmented.added.length > 0) {
       console.info('[EduKit] Bổ sung lệnh dựng hình từ đề bài:', augmented.added);
       parsed = augmented.data;

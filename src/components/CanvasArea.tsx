@@ -34,8 +34,12 @@ import {
   getEdgesIntersectionAndArms,
   computeSmartPointLabelOffset,
   moveElements,
+  findPointNear,
+  isCenterOf,
+  circlesCenteredAt,
 } from '../utils/mathUtils';
 import type { EdgeTarget } from '../utils/mathUtils';
+import { freeCenterName } from '../utils/circleCommand';
 import { GridLayer } from './GridLayer';
 import { computeVisibleLine, computeTickMarks, lineExtentPoints } from '../utils/lineLabels';
 import { LatexShape } from './LatexShape';
@@ -81,6 +85,8 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
 
   // In-progress drawing states
   const [drawingStart, setDrawingStart] = useState<{ x: number; y: number } | null>(null);
+  /** Chỗ bấm thật khi bắt đầu vẽ đường tròn */
+  const pressedAtRef = useRef<{ x: number; y: number } | null>(null);
   const [currentPointer, setCurrentPointer] = useState<{ x: number; y: number } | null>(null);
   const [polygonVertices, setPolygonVertices] = useState<number[]>([]);
   const [angleClicks, setAngleClicks] = useState<{ x: number; y: number; id?: string }[]>([]);
@@ -231,6 +237,11 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     // Dynamic stretching for unselected connected segments
     elementsSnapshot.forEach((item) => {
       if (selSet.has(item.id)) return;
+      if (item.type === 'circle') {
+        // Tâm đang được kéo cùng nhóm chọn thì đường tròn đi theo
+        const centerMoves = elementsSnapshot.some((p) => p.type === 'point' && selSet.has(p.id) && isCenterOf(item, p));
+        if (centerMoves) stage.findOne<Konva.Circle>('#' + item.id)?.position({ x: item.cx + dx, y: item.cy + dy });
+      }
       if (item.type === 'segment') {
         let p1x = item.x1;
         let p1y = item.y1;
@@ -596,8 +607,16 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
       return;
     }
 
-    if (currentTool === 'segment' || currentTool === 'line' || currentTool === 'ray' || currentTool === 'circle') {
+    if (currentTool === 'segment' || currentTool === 'line' || currentTool === 'ray') {
       setDrawingStart(pos);
+      setCurrentPointer(pos);
+    }
+
+    if (currentTool === 'circle') {
+      // Bắt đầu kéo gần một điểm có sẵn thì lấy đúng điểm đó làm tâm
+      const near = findPointNear(elements, pos, 14);
+      pressedAtRef.current = pos;
+      setDrawingStart(near ? { x: near.x, y: near.y } : pos);
       setCurrentPointer(pos);
     }
   };
@@ -682,8 +701,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
     const dy = currentPointer.y - drawingStart.y;
     const dist = Math.hypot(dx, dy);
 
+    // Với đường tròn, đo từ chỗ bấm thật (tâm có thể đã được hút về điểm gần đó)
+    const dragged =
+      currentTool === 'circle' && pressedAtRef.current
+        ? Math.hypot(currentPointer.x - pressedAtRef.current.x, currentPointer.y - pressedAtRef.current.y)
+        : dist;
+
     // Minimum distance threshold to avoid accidental tiny shapes
-    if (dist > 8) {
+    if (dragged > 8 && dist > 8) {
       if (currentTool === 'segment') {
         const segGid = `seg-group-${Date.now()}`;
         const newSeg: SegmentElement = {
@@ -744,9 +769,14 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
         onElementsChange([...elements, newLine]);
         onSelectIds([newLine.id]);
       } else if (currentTool === 'circle') {
+        const now = Date.now();
+        // Tâm: dùng điểm có sẵn tại đó, nếu chưa có thì tạo điểm mới (O, I, K...)
+        const existing = findPointNear(elements, drawingStart, 0.5);
+        const circleGid = existing ? undefined : `circle-group-${now}`;
         const newCircle: CircleElement = {
-          id: `circle-${Date.now()}`,
+          id: `circle-${now}`,
           type: 'circle',
+          ...(circleGid ? { groupId: circleGid } : {}),
           cx: drawingStart.x,
           cy: drawingStart.y,
           radius: Math.round(dist),
@@ -755,7 +785,23 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
           strokeStyle: 'solid',
           fill: 'transparent',
         };
-        onElementsChange([...elements, newCircle]);
+        if (existing) {
+          onElementsChange([...elements, newCircle]);
+        } else {
+          const center: PointElement = {
+            id: `pt-center-${now}`,
+            type: 'point',
+            groupId: circleGid,
+            x: drawingStart.x,
+            y: drawingStart.y,
+            radius: 4.5,
+            label: freeCenterName(elements.flatMap((el) => (el.type === 'point' && el.label ? [el.label] : []))),
+            stroke: '#0f172a',
+            strokeWidth: 2,
+            strokeStyle: 'solid',
+          };
+          onElementsChange([...elements, newCircle, center]);
+        }
         onSelectIds([newCircle.id]);
       }
     }
@@ -1333,6 +1379,18 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                         }
 
                       // 1. Real-time dynamic stretching for connected segments
+                      // Kéo tâm thì đường tròn (và điểm gắn trên nó) đi theo
+                      circlesCenteredAt(elements, el).forEach((circle) => {
+                        stage.findOne<Konva.Circle>('#' + circle.id)?.position({ x: curX, y: curY });
+                        elements.forEach((p) => {
+                          if (p.type === 'point' && p.id !== el.id && p.attachedTo?.elementId === circle.id) {
+                            const dx = curX - oldX;
+                            const dy = curY - oldY;
+                            stage.findOne<Konva.Group>('#' + p.id)?.position({ x: p.x + dx, y: p.y + dy });
+                          }
+                        });
+                      });
+
                       elements.forEach((item) => {
                         if (item.type === 'segment') {
                           const at1 = Math.hypot(item.x1 - oldX, item.y1 - oldY) < 10;
@@ -1527,7 +1585,9 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                       }
 
                       // B. Xử lý di chuyển điểm và cập nhật các liên kết hình học
-                      const snap = findSnapTarget({ x: rawX, y: rawY }, elements, 16, el.id);
+                      // Tâm không được hút vào chính đường tròn của nó
+                      const own = circlesCenteredAt(elements, el);
+                      const snap = findSnapTarget({ x: rawX, y: rawY }, elements.filter((item) => !own.some((c) => c.id === item.id)), 16, el.id);
                       const newX = snap ? snap.x : rawX;
                       const newY = snap ? snap.y : rawY;
                       const newAttachedTo = snap ? snap.attachedTo : el.attachedTo;
@@ -1541,6 +1601,13 @@ export const CanvasArea: React.FC<CanvasAreaProps> = ({
                             stroke: item.stroke,
                             attachedTo: newAttachedTo,
                           };
+                        }
+
+                        if (item.type === 'circle' && own.some((c) => c.id === item.id)) {
+                          return { ...item, cx: newX, cy: newY };
+                        }
+                        if (item.type === 'point' && own.some((c) => c.id === item.attachedTo?.elementId)) {
+                          return { ...item, x: item.x + newX - oldX, y: item.y + newY - oldY };
                         }
 
                         // If a polygon has a vertex at (oldX, oldY), ONLY update that specific vertex

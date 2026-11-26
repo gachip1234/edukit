@@ -47,7 +47,93 @@ function splitList(list: string): string[] {
     .filter(Boolean);
 }
 
-export function augmentWithProblemText(aiData: any, problemText: string): AugmentResult {
+/** Khóa nhận ra hai lệnh dựng cùng một đường tròn: tâm + hai đầu mút của bán kính (không kể thứ tự) */
+const circleKey = (center: string, ends: string[]) => `${center}:${[...ends].sort().join('')}`;
+
+function commandCircleKey(c: any): string | null {
+  const isString = typeof c === 'string';
+  const match = isString ? c.match(/^\s*(CIRCLE_RADIUS|CIRCLE_THROUGH|CIRCLE)\s*\(([^)]*)\)/i) : null;
+  const cmd = String(isString ? match?.[1] || '' : c?.cmd || '').toUpperCase();
+  if (!/^CIRCLE(_RADIUS|_THROUGH)?$/.test(cmd)) return null;
+  // Tách từng tham số để "AC" thành hai điểm A, C
+  const args: unknown[] = isString ? match![2].split(',') : [c.center, ...toNameList(c.points ?? c.radius)];
+  const names = args.flatMap((a) => toNameList(String(a ?? '').trim()));
+  if (cmd === 'CIRCLE_THROUGH') return names.length >= 2 ? circleKey(names[names.length - 2], names.slice(-2)) : null;
+  return names.length >= 3 ? circleKey(names[names.length - 3], names.slice(-2)) : null;
+}
+
+/**
+ * Đường tròn đề bài xác định bằng điểm ("tâm A bán kính AB", "(O; OM)", "tâm M đi qua N"):
+ * thay đường tròn AI tự tính bán kính bằng lệnh dựng chính xác theo đúng tâm.
+ */
+function circlesByPoints(
+  data: AnyCommand,
+  commands: any[],
+  text: string,
+  has: (name: string) => boolean,
+  keep: Set<unknown>,
+  added: string[],
+): boolean {
+  if (!/tròn/i.test(text)) return false;
+  const N = "[A-Z]'?";
+  const CIRCLE = '(?:[Đđ]ường|[Hh]ình)\\s+tròn\\s+(?:có\\s+)?tâm\\s+';
+  const SEGMENT = '(?:(?:độ dài\\s+)?(?:đoạn(?:\\s+thẳng)?|cạnh)\\s+|độ dài\\s+)?';
+  const END = "(?![A-Za-z0-9'])(?!\\s*[/*+:×])";
+  const wanted: { cmd: string; center: string; points: string[] }[] = [];
+  const radius = [
+    `${CIRCLE}(${N})\\s*,?\\s*(?:(?:và|có|với)\\s+)*bán kính\\s+(?:R\\s*=\\s*)?(?:(?:bằng|là)\\s+)?${SEGMENT}(${N})(${N})${END}`,
+    `\\(\\s*(${N})\\s*;\\s*(?:R\\s*=\\s*)?(${N})(${N})\\s*\\)`,
+  ];
+  for (const source of radius) {
+    for (const m of text.matchAll(new RegExp(source, 'g'))) wanted.push({ cmd: 'CIRCLE_RADIUS', center: m[1], points: [m[2], m[3]] });
+  }
+  for (const m of text.matchAll(new RegExp(`${CIRCLE}(${N})\\s*,?\\s*(?:và\\s+)?(?:đi\\s+)?qua\\s+(?:điểm\\s+)?(${N})${END}`, 'g'))) {
+    wanted.push({ cmd: 'CIRCLE_THROUGH', center: m[1], points: [m[2]] });
+  }
+  // Chỉ dựng khi tâm và các điểm cho bán kính đều đã có thật trên hình
+  const usable = wanted.filter((w) => [w.center, ...w.points].every(has));
+  if (usable.length === 0) return false;
+
+  const circles: any[] = Array.isArray(data.circles) ? [...data.circles] : [];
+  for (const [index, w] of usable.entries()) {
+    // Cùng tâm còn có đường tròn bán kính bằng số thì giữ nguyên các đường tròn AI đưa ra
+    const numeric = new RegExp(`(?:tâm\\s+${w.center}(?![A-Za-z'])[^.;]{0,25}?bán kính\\s+(?:R\\s*=\\s*|bằng\\s+|là\\s+)?\\d)|\\(\\s*${w.center}\\s*;\\s*(?:R\\s*=\\s*)?\\d`).test(text);
+    let name: string | undefined;
+    if (!numeric) {
+      for (let i = circles.length - 1; i >= 0; i--) {
+        if (!keep.has(circles[i]) && String(circles[i]?.center || '').trim() === w.center) {
+          name = circles[i].name || name;
+          circles.splice(i, 1);
+        }
+      }
+      for (let i = commands.length - 1; i >= 0; i--) {
+        const c = commands[i];
+        const m = typeof c === 'string' ? c.match(/^\s*(?:CIRCLE|DuongTron)\s*\(\s*(?:([A-Za-z0-9_']+)\s*,\s*)?([A-Z]'?)\s*,\s*[0-9.]+\s*\)/i) : null;
+        const sameObject = c && typeof c === 'object' && String(c.cmd || '').toUpperCase() === 'CIRCLE' && c.center === w.center;
+        if ((m && m[2] === w.center) || sameObject) {
+          name = (m ? m[1] : c.name) || name;
+          commands.splice(i, 1);
+        }
+      }
+    }
+    const wantedKey = circleKey(w.center, w.cmd === 'CIRCLE_RADIUS' ? w.points : [w.center, w.points[0]]);
+    const exists = commands.some((c) => commandCircleKey(c) === wantedKey);
+    if (!exists) {
+      commands.push({ cmd: w.cmd, name: name || `circle_${w.center}_${index + 1}`, center: w.center, points: w.points });
+      added.push(
+        w.cmd === 'CIRCLE_RADIUS' ? `Đường tròn tâm ${w.center} bán kính ${w.points.join('')}` : `Đường tròn tâm ${w.center} đi qua ${w.points[0]}`,
+      );
+    }
+  }
+  data.circles = circles;
+  return true;
+}
+
+export function augmentWithProblemText(
+  aiData: any,
+  problemText: string,
+  options: { circleText?: string; keepCircles?: unknown[] } = {},
+): AugmentResult {
   const added: string[] = [];
   if (!aiData || typeof aiData !== 'object' || Array.isArray(aiData) || !problemText) {
     return { data: aiData, added };
@@ -63,9 +149,6 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
   for (const p of Array.isArray(data.points) ? data.points : []) {
     const name = String(p?.name || p?.label || '').trim();
     if (name) defined.add(name);
-  }
-  for (const c of Array.isArray(data.circles) ? data.circles : []) {
-    if (c?.center) defined.add(String(c.center).trim());
   }
   for (const c of commands) {
     if (typeof c === 'string') {
@@ -85,6 +168,15 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
       if (typeof c[key] === 'string' && c[key].trim()) defined.add(c[key].trim());
     }
     toNameList(c.names).forEach((n) => defined.add(n));
+  }
+  // Tên chỉ được nhắc làm tâm đường tròn: coi là đã có, nhưng chưa có vị trí thật
+  const circleOnly = new Set<string>();
+  for (const c of Array.isArray(data.circles) ? data.circles : []) {
+    const name = String(c?.center || '').trim();
+    if (name && !defined.has(name)) {
+      defined.add(name);
+      circleOnly.add(name);
+    }
   }
   const has = (n: string) => defined.has(n);
 
@@ -447,7 +539,11 @@ export function augmentWithProblemText(aiData: any, problemText: string): Augmen
     }
   }
 
-  if (added.length > 0) {
+  const circleText = (options.circleText ?? problemText).replace(/\s+/g, ' ');
+  const placed = (n: string) => defined.has(n) && !circleOnly.has(n);
+  const circlesChanged = circlesByPoints(data, commands, circleText, placed, new Set(options.keepCircles), added);
+
+  if (added.length > 0 || circlesChanged) {
     data.commands = commands;
     data.segments = segments;
   }

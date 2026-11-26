@@ -10,6 +10,7 @@ import type {
 } from '../types/geometry';
 import { getCanvasOrigin, mathToScreen } from './coordinateSystem';
 import { distance } from './mathUtils';
+import { buildCircle, freeCenterName, parseCircleCommand } from './circleCommand';
 
 /** Đoạn thẳng mang ký hiệu "bằng nhau" (gạch nhỏ ở giữa), vẽ trùng lên cạnh có sẵn */
 function tickSegment(
@@ -39,6 +40,8 @@ export interface NlpParseResult {
   message: string;
   newElements?: GeoElement[];
   updatedElements?: GeoElement[];
+  /** Đã hiểu lệnh nhưng không vẽ được: báo cho người dùng, không chuyển sang bộ giải khác */
+  final?: boolean;
 }
 
 const COLOR_MAP: Record<string, string> = {
@@ -149,6 +152,11 @@ function createRegularPolygon(
  */
 export function isSimpleSingleObjectCommand(rawPrompt: string): boolean {
   const prompt = rawPrompt.trim();
+
+  // Lệnh vẽ đường tròn đọc hiểu được trọn câu (kể cả "(A; AB)", "bán kính đoạn thẳng CD")
+  if (parseCircleCommand(prompt)) {
+    return true;
+  }
 
   // 0. Đề tia đối ngắn (chỉ có đoạn/tia, không có hình khác) → bộ giải không cần AI xử lý được trọn vẹn
   if (
@@ -261,6 +269,12 @@ export function parseVietnameseGeometry(
   const norm = normalizeText(prompt);
   const origin = getCanvasOrigin(canvasWidth, canvasHeight);
   const now = Date.now();
+
+  const circleCommand = parseCircleCommand(prompt);
+  if (circleCommand) {
+    const built = buildCircle(circleCommand, existingElements, origin);
+    return { ...built, final: !built.success };
+  }
 
   // -------------------------------------------------------------
   // 0. TIA ĐỐI: "(cho đoạn thẳng BC,) vẽ tia Bx là tia đối của tia BC", "tia đối của tia BC là tia Bx",
@@ -761,12 +775,13 @@ export function parseVietnameseGeometry(
       }
     }
 
-    let centerName = 'O';
+    const existingPoints = existingElements.filter((el): el is PointElement => el.type === 'point');
+    let centerName: string | undefined;
     let cx = 0;
     let cy = 0;
     let radius = 3;
 
-    const centerMatch = prompt.match(/tâm\s+([A-Za-z])(?:\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\))?/i);
+    const centerMatch = prompt.match(/tâm\s+([A-Za-z])(?![\p{L}])(?:\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\))?/iu);
     if (centerMatch) {
       centerName = centerMatch[1].toUpperCase();
       if (centerMatch[2] && centerMatch[3]) {
@@ -775,15 +790,21 @@ export function parseVietnameseGeometry(
       }
     }
 
-    const rMatch = prompt.match(/(?:bán kính|r|bk)\s*(?:=\s*)?(\d+(?:\.\d+)?)/i);
+    const rMatch =
+      prompt.match(/(?:bán kính|\br|bk)\s*(?:=\s*)?(\d+(?:[.,]\d+)?)/i) ?? prompt.match(/(?:tâm\s+[A-Za-z]\s+)(\d+(?:[.,]\d+)?)/i);
     if (rMatch) {
-      radius = parseFloat(rMatch[1]);
-    } else {
-      const numMatch = prompt.match(/(?:tâm\s+[A-Za-z]\s+)(\d+(?:\.\d+)?)/i);
-      if (numMatch) radius = parseFloat(numMatch[1]);
+      radius = parseFloat(rMatch[1].replace(',', '.'));
+    } else if (/bán kính|ban kinh|đường kính|duong kinh|\bbk\b|\bqua\b/i.test(prompt)) {
+      return {
+        success: false,
+        message: 'Chưa hiểu bán kính trong lệnh này. Ví dụ: "vẽ đường tròn tâm A bán kính AB" hoặc "vẽ đường tròn tâm O bán kính 3".',
+      };
     }
 
-    const sCenter = mathToScreen(cx, cy, origin);
+    // Tâm đã có trên bảng thì vẽ quanh đúng điểm đó, không tạo điểm trùng tên
+    const known = centerMatch?.[2] ? undefined : existingPoints.find((p) => p.label === centerName);
+    centerName ??= freeCenterName(existingPoints.map((p) => p.label ?? ''));
+    const sCenter = known ?? mathToScreen(cx, cy, origin);
     const radiusPx = radius * 50;
     const gidCircle = `circle-group-${now}`;
 
@@ -815,8 +836,8 @@ export function parseVietnameseGeometry(
 
     return {
       success: true,
-      message: `Đã vẽ đường tròn tâm ${centerName}(${cx}, ${cy}) bán kính R = ${radius}!`,
-      newElements: [...existingElements, newCircle, centerPoint],
+      message: `Đã vẽ đường tròn tâm ${centerName} bán kính R = ${radius}!`,
+      newElements: known ? [...existingElements, newCircle] : [...existingElements, newCircle, centerPoint],
     };
   }
 

@@ -7,6 +7,7 @@ import type {
   PolygonElement,
   LineElement,
 } from '../types/geometry';
+import { freeCenterName } from './circleCommand';
 
 export interface ConstructionCommand {
   cmd: string;
@@ -201,6 +202,27 @@ export function normalizeConstructionCommands(rawList: any[]): ConstructionComma
         continue;
       }
 
+      // 6a. Đường tròn xác định bằng điểm: CIRCLE_RADIUS(c1, O, A, B) | CIRCLE_THROUGH(c1, O, A) | CIRCLE_DIAMETER(c1, A, B, O)
+      const byPoints = trimmed.match(/^(CIRCLE_RADIUS|CIRCLE_THROUGH|CIRCLE_DIAMETER)\s*\(([^)]*)\)/i);
+      if (byPoints) {
+        const cmdName = byPoints[1].toUpperCase();
+        const args = byPoints[2].split(',').map((a) => a.trim()).filter(Boolean);
+        // Tham số đầu là tên đường tròn nếu viết thường (c1) hoặc khi thừa so với số điểm cần có
+        const named = args.length > 0 && (/^[a-z]/.test(args[0]) || toNameList(args).length > 3);
+        const name = named ? args.shift() : undefined;
+        const pts = toNameList(args);
+        if (cmdName === 'CIRCLE_DIAMETER') result.push({ cmd: cmdName, name, points: pts.slice(0, 2), center: pts[2] });
+        else result.push({ cmd: cmdName, name, center: pts[0], points: pts.slice(1, cmdName === 'CIRCLE_RADIUS' ? 3 : 2) });
+        continue;
+      }
+
+      // CIRCLE(c1, O, AB): bán kính viết bằng tên đoạn thẳng
+      const circSeg = trimmed.match(/^(?:CIRCLE|DuongTron)\s*\(\s*(?:([A-Za-z0-9_']+)\s*,\s*)?([A-Z]'?)\s*,\s*([A-Z]'?)([A-Z]'?)\s*\)/);
+      if (circSeg) {
+        result.push({ cmd: 'CIRCLE_RADIUS', name: circSeg[1], center: circSeg[2], points: [circSeg[3], circSeg[4]] });
+        continue;
+      }
+
       // 6. CIRCLE(c1, O, 3) or DuongTron(O, 3)
       const circMatch = trimmed.match(/^(?:CIRCLE|DuongTron)\s*\(\s*(?:([A-Za-z0-9_']+)\s*,\s*)?([A-Za-z0-9_']+)\s*,\s*([0-9.]+)\s*\)/i);
       if (circMatch) {
@@ -333,6 +355,9 @@ function autoPlaceMissingBasePoints(
       case 'DIAMETER':
         derived.add(String(c.otherEnd || 'C').trim());
         break;
+      case 'CIRCLE_DIAMETER':
+        if (c.center) derived.add(String(c.center).trim());
+        break;
       case 'SECANT':
       case 'SECANT_FROM':
       case 'LINE_CIRCLE':
@@ -383,6 +408,14 @@ function autoPlaceMissingBasePoints(
         break;
       case 'DIAMETER':
         add(toNameList(c.through));
+        break;
+      case 'CIRCLE_RADIUS':
+      case 'CIRCLE_THROUGH':
+        add(toNameList(c.center));
+        add(toNameList(c.points));
+        break;
+      case 'CIRCLE_DIAMETER':
+        add(toNameList(c.points));
         break;
       case 'RAY':
       case 'LINE':
@@ -459,6 +492,17 @@ function oppositeArgs(c: ConstructionCommand): string[] {
   return a.map((v: unknown) => (v == null ? '' : String(v).trim()));
 }
 
+/** Tên dùng để các lệnh khác nhắc tới đường tròn (thêm dấu ○ để không lẫn với tên điểm) */
+const circleKeys = (c: ConstructionCommand) =>
+  [c.name, c.center].filter(Boolean).map((n) => `○${String(n).trim()}`);
+
+/** Đường tròn mà một lệnh cần dùng tới */
+function usedCircle(c: ConstructionCommand): string {
+  if (c.cmd === 'TANGENTS' || c.cmd === 'DIAMETER') return String(c.circle || 'O').trim();
+  if (c.cmd === 'SECANT' || c.cmd === 'SECANT_FROM' || c.cmd === 'LINE_CIRCLE') return secantArgs(c).circle;
+  return '';
+}
+
 /** Điểm đầu vào / đầu ra của một lệnh dựng hình (dùng để sắp xếp thứ tự chạy) */
 function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[] } {
   const one = (v: unknown) => (v ? [String(v).trim()] : []);
@@ -471,6 +515,13 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
       return { inputs: [], outputs: toNameList(c.names) };
     case 'DIAMETER':
       return { inputs: one(c.through), outputs: one(c.otherEnd) };
+    case 'CIRCLE':
+      return { inputs: [], outputs: circleKeys(c) };
+    case 'CIRCLE_RADIUS':
+    case 'CIRCLE_THROUGH':
+      return { inputs: [...one(c.center), ...toNameList(c.points)], outputs: circleKeys(c) };
+    case 'CIRCLE_DIAMETER':
+      return { inputs: toNameList(c.points), outputs: [...one(c.center), ...circleKeys(c)] };
     case 'RAY':
     case 'LINE':
       return { inputs: Array.isArray(c.args) ? c.args.slice(0, 2) : [...one(c.from), ...one(c.through)], outputs: [] };
@@ -509,6 +560,12 @@ function commandIO(c: ConstructionCommand): { inputs: string[]; outputs: string[
 /** Sắp xếp lại (tại chỗ) các lệnh để mỗi lệnh chạy sau những lệnh tạo ra điểm nó cần. Giữ thứ tự gốc khi có thể. */
 function orderCommandsByDependency(commands: ConstructionCommand[], available: Set<string>): void {
   const remaining = commands.map((c) => ({ c, io: commandIO(c) }));
+  // Lệnh dùng đường tròn phải chạy sau lệnh dựng đường tròn đó
+  const drawn = new Set(remaining.flatMap((r) => r.io.outputs).filter((n) => n.startsWith('○')));
+  for (const { c, io } of remaining) {
+    const ref = `○${usedCircle(c)}`;
+    if (drawn.has(ref)) io.inputs = [...io.inputs, ref];
+  }
   const ordered: ConstructionCommand[] = [];
   const known = new Set(available);
   let progress = true;
@@ -563,6 +620,9 @@ export function executeConstructionCommands(
   };
   const executedLog: string[] = [];
 
+  // Tâm đường tròn chưa có tọa độ, tạm đặt ở gốc
+  const placeholderCenters = new Set<string>();
+
   // 1. TẢI CÁC ĐỐI TƯỢNG HÌNH HỌC TỪ CẤU TRÚC JSON ĐẦU RA CỦA AI (points, circles, segments, polygons, shapes)
   if (rawInput && typeof rawInput === 'object') {
     // a. Điểm (points)
@@ -588,7 +648,7 @@ export function executeConstructionCommands(
         const r = Math.abs(Number(circ.r ?? circ.radius)) || 3;
         if (!points.has(center)) {
           points.set(center, { name: center, x: 0, y: 0, label: center });
-          executedLog.push(`Điểm tâm ${center}(0, 0)`);
+          placeholderCenters.add(center);
         }
         circles.set(name, { name, center, r });
         circles.set(center, { name, center, r });
@@ -714,6 +774,13 @@ export function executeConstructionCommands(
     return true;
   });
 
+  // Tâm do một lệnh tính ra (trung điểm, giao điểm...) thì bỏ vị trí tạm, để lệnh đó chạy trước
+  const computed = new Set(commands.flatMap((c) => commandIO(c).outputs));
+  for (const center of placeholderCenters) {
+    if (computed.has(center)) points.delete(center);
+    else executedLog.push(`Điểm tâm ${center}(0, 0)`);
+  }
+
   // 2b. TỰ ĐẶT VỊ TRÍ CÁC ĐIỂM GỐC MÀ AI QUÊN CHO TỌA ĐỘ
   // AI đôi khi chỉ trả về segments/polygons/commands (vd: đoạn AB, BC, CA + đường cao AH)
   // mà không có "points". Khi đó các điểm gốc (A, B, C) được tự đặt ở vị trí tổng quát,
@@ -785,6 +852,33 @@ export function executeConstructionCommands(
         // Also map by center name for convenient lookup
         circles.set(center, { name, center, r });
         executedLog.push(`Đường tròn (${center}; R = ${r})`);
+        break;
+      }
+
+      case 'CIRCLE_RADIUS':
+      case 'CIRCLE_THROUGH':
+      case 'CIRCLE_DIAMETER': {
+        const [a, b] = toNameList(cmd.points);
+        let center = String(cmd.center || '').trim();
+        let r = 0;
+        if (cmd.cmd === 'CIRCLE_DIAMETER') {
+          const pa = getPt(a);
+          const pb = getPt(b);
+          if (!pa || !pb) break;
+          center ||= freeCenterName(points.keys());
+          points.set(center, { name: center, x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2, label: points.get(center)?.label ?? center });
+          r = Math.hypot(pa.x - pb.x, pa.y - pb.y) / 2;
+        } else {
+          const from = cmd.cmd === 'CIRCLE_THROUGH' ? getPt(center) : getPt(a);
+          const to = cmd.cmd === 'CIRCLE_THROUGH' ? getPt(a) : getPt(b);
+          if (!getPt(center) || !from || !to) break;
+          r = Math.hypot(from.x - to.x, from.y - to.y);
+        }
+        if (!(r > 1e-6)) break;
+        const name = String(cmd.name || `circle_${center}_${a}${b || ''}`).trim();
+        circles.set(name, { name, center, r });
+        circles.set(center, { name, center, r });
+        executedLog.push(`Đường tròn (${center}; R = ${Math.round(r * 1000) / 1000})`);
         break;
       }
 
