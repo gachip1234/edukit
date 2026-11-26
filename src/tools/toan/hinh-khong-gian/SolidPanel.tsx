@@ -24,8 +24,14 @@ import {
 import { SGK_VIEW, effectiveView, type View } from './scene';
 import { INK, type DrawStyle } from './exportImage';
 import { Swatches } from './Swatches';
+import type { Look3 } from './three/engine';
 
 interface Props {
+  /** Đang xem mô hình 3D */
+  solid3d: boolean;
+  onSolid3d: (on: boolean) => void;
+  look3d: Look3;
+  onLook3d: (look: Look3) => void;
   doc: SolidDoc;
   view: View;
   style: DrawStyle;
@@ -92,6 +98,10 @@ const choice = (active: boolean) =>
   }`;
 
 export const SolidPanel: React.FC<Props> = ({
+  solid3d,
+  onSolid3d,
+  look3d,
+  onLook3d,
   doc,
   view,
   style,
@@ -175,6 +185,30 @@ export const SolidPanel: React.FC<Props> = ({
 
   return (
     <div className="flex flex-col gap-5 p-4">
+      <Section title="Chế độ hiển thị">
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" aria-pressed={!solid3d} onClick={() => onSolid3d(false)} className={choice(!solid3d)}>
+            Hình vẽ nét
+          </button>
+          <button type="button" aria-pressed={solid3d} onClick={() => onSolid3d(true)} className={choice(solid3d)}>
+            Mô hình 3D
+          </button>
+        </div>
+        {solid3d &&
+          (
+            [
+              ['glass', 'Kính trong'],
+              ['perspective', 'Phối cảnh xa gần'],
+              ['floor', 'Mặt sàn và bóng đổ'],
+            ] as const
+          ).map(([key, title]) => (
+            <label key={key} className="flex items-center gap-2 min-h-9 text-[13px] font-semibold text-slate-700">
+              <input type="checkbox" checked={look3d[key]} onChange={(e) => onLook3d({ ...look3d, [key]: e.target.checked })} className="w-4 h-4" />
+              {title}
+            </label>
+          ))}
+      </Section>
+
       <Section title="Khối hình">
         <div className="grid grid-cols-2 gap-2">
           {SOLIDS.map((s) => (
@@ -209,7 +243,7 @@ export const SolidPanel: React.FC<Props> = ({
       </Section>
 
       <Section title="Tô màu mặt">
-        <p className="text-xs text-slate-500">Màu tô nhẹ, trong suốt 90%.</p>
+        <p className="text-xs text-slate-500">{solid3d ? 'Ở mô hình 3D, mặt được tô đậm hơn để thấy rõ trên khối.' : 'Màu tô nhẹ, trong suốt 90%.'}</p>
         <ul className="flex flex-col gap-1">
           {faces.map((f) => (
             <li key={f.key} data-face-row={f.key} className="flex flex-col rounded-lg border border-slate-200 pl-3">
@@ -237,10 +271,12 @@ export const SolidPanel: React.FC<Props> = ({
       <Section title="Nét và nhãn">
         <Slider label="Độ dày nét" value={style.lineWidth} min={1} max={4} step={0.5} onChange={(lineWidth) => onStyleChange({ ...style, lineWidth })} />
         <Slider label="Cỡ chữ" value={style.fontSize} min={14} max={36} step={1} onChange={(fontSize) => onStyleChange({ ...style, fontSize })} />
-        <label className="flex items-center gap-2 min-h-9 text-[13px] font-semibold text-slate-700">
-          <input type="checkbox" checked={style.showVertexDots} onChange={(e) => onStyleChange({ ...style, showVertexDots: e.target.checked })} className="w-4 h-4" />
-          Chấm điểm tại các đỉnh
-        </label>
+        {!solid3d && (
+          <label className="flex items-center gap-2 min-h-9 text-[13px] font-semibold text-slate-700">
+            <input type="checkbox" checked={style.showVertexDots} onChange={(e) => onStyleChange({ ...style, showVertexDots: e.target.checked })} className="w-4 h-4" />
+            Chấm điểm tại các đỉnh
+          </label>
+        )}
       </Section>
 
       <Section title="Đỉnh và điểm">

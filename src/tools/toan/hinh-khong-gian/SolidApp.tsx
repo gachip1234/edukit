@@ -27,7 +27,9 @@ import { SGK_VIEW, buildScene, effectiveView, roundYaw, type Frame, type Scene, 
 import { useAutoRotate } from './useAutoRotate';
 import { basePlanePoint, freePosition, pickFace, pickItem, pickLine, pickOnObject, type ScreenPoint } from './picking';
 import { EMPTY_PICK, applyPick, intersectHint, type IntersectMode, type IntersectPick, type PickInput } from './intersect';
-import { copyScene, downloadBlob, sceneToPng, type DrawStyle } from './exportImage';
+import { copyPng, downloadBlob, sceneToPng, type DrawStyle } from './exportImage';
+import type { Solid3DProps } from './three/Solid3D';
+import type { Look3 } from './three/engine';
 import { parseProject, serializeProject } from './projectFile';
 import { SolidCanvas, type SolidTool } from './SolidCanvas';
 import { SolidPanel } from './SolidPanel';
@@ -77,6 +79,11 @@ export const SolidApp: React.FC = () => {
   const held = useRef(false);
   useAutoRotate(spinning, held, setView);
   const sceneRef = useRef<Scene | null>(null);
+  /** Chế độ mô hình 3D; phần đồ họa chỉ được tải khi bật lần đầu */
+  const [solid3d, setSolid3d] = useState(false);
+  const [look3d, setLook3d] = useState<Look3>({ glass: true, perspective: true, floor: true });
+  const [View3D, setView3D] = useState<React.ComponentType<Solid3DProps> | null>(null);
+  const export3dRef = useRef<(() => Promise<Blob>) | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const change = (update: (doc: SolidDoc) => SolidDoc, key?: string) => dispatch({ type: 'change', update, key, time: Date.now() });
@@ -92,9 +99,27 @@ export const SolidApp: React.FC = () => {
   const selectTool = (next: SolidTool) => {
     // Hình đứng yên thì mới bấm chọn điểm, cạnh được chính xác
     if (next !== 'rotate') stopSpin();
+    // Các công cụ vẽ làm việc trên hình nét
+    if (next !== 'rotate' && solid3d) {
+      setSolid3d(false);
+      notify('Đã chuyển về hình vẽ nét để dùng công cụ này');
+    }
     setTool(next);
     setPointMenu(false);
     clearPicks();
+  };
+  const showSolid3d = (next: boolean) => {
+    if (next) selectTool('rotate');
+    setSolid3d(next);
+    if (!next || View3D) return;
+    import('./three/Solid3D').then(
+      (module) => setView3D(() => module.default),
+      (error) => {
+        console.warn('Không tải được đồ họa 3D', error);
+        setSolid3d(false);
+        notify('Không tải được đồ họa 3D. Hãy kiểm tra mạng rồi tải lại trang.', true);
+      },
+    );
   };
   const toggleSpin = () => {
     if (spinning) return stopSpin();
@@ -103,6 +128,7 @@ export const SolidApp: React.FC = () => {
     if (isRound(doc.kind)) setView((v) => effectiveView(doc.kind, v));
     setSpinning(true);
   };
+  const zoomBy = (factor: number) => setZoom((z) => Math.min(2.5, Math.max(0.4, z * factor)));
   const timeTravel = (type: 'undo' | 'redo') => {
     clearPicks();
     dispatch({ type });
@@ -215,10 +241,17 @@ export const SolidApp: React.FC = () => {
     }
   };
 
+  /** Ảnh PNG của hình đang hiển thị; null khi chưa vẽ xong */
+  const currentPng = (): Promise<Blob> | null => {
+    if (solid3d) return export3dRef.current?.() ?? null;
+    return sceneRef.current ? sceneToPng(sceneRef.current, style) : null;
+  };
+
   const handleCopy = async () => {
-    if (!sceneRef.current) return;
     try {
-      const result = await copyScene(sceneRef.current, style);
+      const png = currentPng();
+      if (!png) return;
+      const result = await copyPng(png);
       notify(
         result === 'copied'
           ? 'Đã sao chép hình (PNG trong suốt) — mở Word và nhấn Ctrl+V để dán.'
@@ -230,9 +263,10 @@ export const SolidApp: React.FC = () => {
   };
 
   const handleDownload = async () => {
-    if (!sceneRef.current) return;
     try {
-      downloadBlob(await sceneToPng(sceneRef.current, style), `hinh-khong-gian-${Date.now()}.png`);
+      const png = currentPng();
+      if (!png) return;
+      downloadBlob(await png, `hinh-khong-gian-${Date.now()}.png`);
       notify('Đã tải ảnh PNG nền trong suốt về máy.');
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Không tạo được ảnh', true);
@@ -410,29 +444,52 @@ export const SolidApp: React.FC = () => {
             </div>
           )}
           <div className="relative flex-1 min-h-0" onPointerDownCapture={() => (held.current = true)}>
-            <SolidCanvas
-              doc={doc}
-              view={shown}
-              paint={paint}
-              zoom={zoom}
-              style={style}
-              tool={tool}
-              picked={tool === 'intersect' ? intersectPick.points : picked}
-              onPick={handlePick}
-              chosenLine={intersectPick.first}
-              wantsPlane={intersectMode === 'line-plane' && intersectPick.first !== null}
-              onClickAt={handleClickAt}
-              onDragPoint={(id, next) => change((d) => movePoint(d, id, next), `point-${id}`)}
-              onViewChange={setView}
-              onZoom={(factor) => setZoom((z) => Math.min(2.5, Math.max(0.4, z * factor)))}
-              onMoveLabel={(id, dx, dy) =>
-                change((d) => {
-                  const old = d.labelOffsets[id] ?? { x: 0, y: 0 };
-                  return { ...d, labelOffsets: { ...d.labelOffsets, [id]: { x: old.x + dx, y: old.y + dy } } };
-                }, `label-${id}`)
-              }
-              sceneRef={sceneRef}
-            />
+            {solid3d ? (
+              View3D ? (
+                <View3D
+                  doc={doc}
+                  view={shown}
+                  zoom={zoom}
+                  style={style}
+                  look={look3d}
+                  onViewChange={setView}
+                  onZoom={zoomBy}
+                  exportRef={export3dRef}
+                  onFail={() => {
+                    setSolid3d(false);
+                    notify('Trình duyệt này không dùng được đồ họa 3D', true);
+                  }}
+                />
+              ) : (
+                <p role="status" className="absolute inset-0 flex items-center justify-center text-sm font-semibold text-slate-500">
+                  Đang tải đồ họa 3D…
+                </p>
+              )
+            ) : (
+              <SolidCanvas
+                doc={doc}
+                view={shown}
+                paint={paint}
+                zoom={zoom}
+                style={style}
+                tool={tool}
+                picked={tool === 'intersect' ? intersectPick.points : picked}
+                onPick={handlePick}
+                chosenLine={intersectPick.first}
+                wantsPlane={intersectMode === 'line-plane' && intersectPick.first !== null}
+                onClickAt={handleClickAt}
+                onDragPoint={(id, next) => change((d) => movePoint(d, id, next), `point-${id}`)}
+                onViewChange={setView}
+                onZoom={zoomBy}
+                onMoveLabel={(id, dx, dy) =>
+                  change((d) => {
+                    const old = d.labelOffsets[id] ?? { x: 0, y: 0 };
+                    return { ...d, labelOffsets: { ...d.labelOffsets, [id]: { x: old.x + dx, y: old.y + dy } } };
+                  }, `label-${id}`)
+                }
+                sceneRef={sceneRef}
+              />
+            )}
             <button
               type="button"
               onClick={toggleSpin}
@@ -496,6 +553,10 @@ export const SolidApp: React.FC = () => {
 
         <aside aria-label="Thuộc tính" className="order-2 md:order-3 short:order-3 shrink-0 max-h-[38%] md:max-h-none short:max-h-none md:w-76 short:w-60 overflow-y-auto border-t md:border-t-0 md:border-l short:border-t-0 short:border-l border-slate-200 bg-white">
           <SolidPanel
+            solid3d={solid3d}
+            onSolid3d={showSolid3d}
+            look3d={look3d}
+            onLook3d={setLook3d}
             doc={doc}
             view={view}
             style={style}

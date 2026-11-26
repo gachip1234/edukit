@@ -107,8 +107,7 @@ export function downloadBlob(blob: Blob, filename: string) {
 }
 
 /** Chép ảnh vào bộ nhớ tạm; trình duyệt không cho phép thì tải file về */
-export async function copyScene(scene: Scene, style: DrawStyle): Promise<'copied' | 'downloaded'> {
-  const png = sceneToPng(scene, style);
+export async function copyPng(png: Promise<Blob>): Promise<'copied' | 'downloaded'> {
   if (navigator.clipboard && typeof window.ClipboardItem !== 'undefined') {
     try {
       // Đưa Promise vào ClipboardItem ngay để Safari giữ quyền từ thao tác bấm
