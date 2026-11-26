@@ -599,6 +599,10 @@ export const App: React.FC = () => {
           showToast(regexRes.message, "success");
           return { success: true, message: regexRes.message, elementCount: newCount };
         }
+        if (regexRes.final) {
+          showToast(regexRes.message, "error");
+          return { success: false, message: regexRes.message, elementCount: 0 };
+        }
 
         // Lệnh ngắn về hình đặc biệt (hình thang, hình thoi...) → thử Bộ giải Sư phạm trước khi gọi AI
         const quickClassic = solveClassicGeometry(prompt, elements, width, height);

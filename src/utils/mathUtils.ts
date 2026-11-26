@@ -1,5 +1,6 @@
 import type {
   GeoElement,
+  CircleElement,
   PointElement,
   PolygonElement,
   StrokeStyle,
@@ -1069,6 +1070,29 @@ export const getEdgesIntersectionAndArms = (
  * Di chuyển một tập hợp các đối tượng hình học (hoặc toàn bộ các đối tượng được chọn)
  * theo vector (dx, dy), bảo toàn 100% vị trí tương đối giữa các đối tượng.
  */
+/** Điểm có phải tâm của đường tròn (trùng vị trí) */
+export const isCenterOf = (circle: { cx: number; cy: number }, point: { x: number; y: number }) =>
+  Math.hypot(point.x - circle.cx, point.y - circle.cy) < 1.5;
+
+/** Các đường tròn nhận điểm này làm tâm */
+export const circlesCenteredAt = (elements: GeoElement[], point: { x: number; y: number }) =>
+  elements.filter((el): el is CircleElement => el.type === 'circle' && isCenterOf(el, point));
+
+/** Điểm gần vị trí cho trước nhất, trong phạm vi `range` điểm ảnh */
+export function findPointNear(elements: GeoElement[], pos: { x: number; y: number }, range: number): PointElement | undefined {
+  let best: PointElement | undefined;
+  let bestDistance = range;
+  for (const el of elements) {
+    if (el.type !== 'point') continue;
+    const d = Math.hypot(el.x - pos.x, el.y - pos.y);
+    if (d <= bestDistance) {
+      best = el;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
+
 export function moveElements(
   elements: GeoElement[],
   targetIds: string[],
@@ -1136,6 +1160,17 @@ export function moveElements(
         }
       });
     }
+  });
+
+  // Tâm di chuyển thì đường tròn và các điểm gắn trên nó đi theo
+  elements.forEach((el) => {
+    if (el.type !== 'circle' || movingElementsSet.has(el.id)) return;
+    const centerMoves = elements.some((p) => p.type === 'point' && movingPointIds.has(p.id) && isCenterOf(el, p));
+    if (!centerMoves) return;
+    movingElementsSet.add(el.id);
+    elements.forEach((p) => {
+      if (p.type === 'point' && p.attachedTo?.elementId === el.id) movingPointIds.add(p.id);
+    });
   });
 
   // Bản đồ các điểm di chuyển để cập nhật đối tượng phụ thuộc chưa được chọn
