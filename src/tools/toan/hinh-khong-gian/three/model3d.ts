@@ -137,7 +137,10 @@ export function labels3d(model: Model3, view: View, frame: Frame, perspective: b
     const s = screen(point.p);
     let dx = s.x - middle.x;
     let dy = s.y - middle.y;
-    if (Math.hypot(dx, dy) < frame.scale * 0.8) [dx, dy] = [1, 1];
+    // Tâm đáy trên của hình trụ: đặt chếch xuống để không đè lên đường tròn
+    const { round } = model;
+    const topCentre = round?.type === 'tru' && Math.hypot(point.p[0], point.p[2], point.p[1] - round.y1) < 1e-6;
+    if (topCentre || Math.hypot(dx, dy) < frame.scale * 0.8) [dx, dy] = [1, 1];
     const length = Math.hypot(dx, dy) || 1;
     // Tên có dấu phẩy hoặc chỉ số thì rộng hơn, đẩy ra thêm để không đè lên chấm điểm
     const gap = frame.fontSize * (point.name.length > 1 ? 1.15 : 0.95);
