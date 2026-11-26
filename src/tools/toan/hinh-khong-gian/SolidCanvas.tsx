@@ -1,15 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { addPoint, buildMesh, resolvePoints, type SolidDoc, type Vec3 } from './model';
+import { addPoint, buildMesh, curveKey, faceKey, resolvePoints, roundCurves, type SolidDoc, type Vec3 } from './model';
 import { boundingRadius, buildScene, type Frame, type Scene, type View } from './scene';
-import { INK, LABEL_FONT, dashPattern, type DrawStyle } from './exportImage';
-import { dragPoint, pickFace, pickLine, pickOnObject, type ScreenPoint } from './picking';
+import { FILL_OPACITY, INK, LABEL_FONT, dashPattern, hasDot, type DrawStyle } from './exportImage';
+import { dragPoint, pickFace, pickItem, pickLine, pickOnObject, type ScreenPoint } from './picking';
 
-export type SolidTool = 'rotate' | 'segment' | 'midpoint' | 'free' | 'on' | 'intersect';
+export type SolidTool = 'rotate' | 'segment' | 'midpoint' | 'free' | 'on' | 'intersect' | 'paint' | 'hide';
 
 /** Công cụ chọn các điểm có sẵn (hiện vòng tròn quanh từng điểm) */
 const PICKS_POINTS: SolidTool[] = ['segment', 'midpoint', 'intersect'];
 /** Công cụ nhận cả lần bấm vào chỗ khác trên hình */
-const CLICKS_CANVAS: SolidTool[] = ['free', 'on', 'intersect'];
+const CLICKS_CANVAS: SolidTool[] = ['free', 'on', 'intersect', 'paint', 'hide'];
+/** Độ mờ của thứ đang ẩn khi dùng công cụ ẩn/hiện */
+const OFF_OPACITY = 0.22;
+const MOVABLE = ['free', 'on', 'face', 'rim', 'disk'];
 
 interface Props {
   doc: SolidDoc;
@@ -24,6 +27,8 @@ interface Props {
   chosenLine: [string, string] | null;
   /** Công cụ giao điểm đang chờ chọn mặt phẳng */
   wantsPlane: boolean;
+  /** Màu đang chọn trong công cụ tô màu */
+  paint: string | null;
   /** Bấm (không kéo) vào hình, tọa độ theo khung vẽ */
   onClickAt: (target: ScreenPoint, frame: Frame) => void;
   onDragPoint: (id: string, change: { at?: Vec3; t?: number; u?: number; v?: number }) => void;
@@ -49,6 +54,7 @@ export const SolidCanvas: React.FC<Props> = ({
   onPick,
   chosenLine,
   wantsPlane,
+  paint,
   onClickAt,
   onDragPoint,
   onViewChange,
@@ -97,6 +103,9 @@ export const SolidCanvas: React.FC<Props> = ({
   });
   const picking = tool !== 'rotate';
   const dotOf = new Map(scene.dots.map((d) => [d.id, d]));
+  // Thứ đang ẩn chỉ hiện mờ khi dùng công cụ ẩn/hiện, để bấm cho hiện lại
+  const drawn = <T extends { off: boolean }>(list: T[]) => (tool === 'hide' ? list : list.filter((item) => !item.off));
+  const path = (points: ScreenPoint[]) => points.map((p) => `${p.x},${p.y}`).join(' ');
 
   const local = (e: React.PointerEvent): ScreenPoint => {
     const rect = boxRef.current!.getBoundingClientRect();
@@ -149,7 +158,15 @@ export const SolidCanvas: React.FC<Props> = ({
   const faceHighlight = (ids: string[], color: string) => {
     const corners = ids.map((id) => dotOf.get(id));
     if (corners.some((c) => !c)) return null;
-    return <polygon points={corners.map((c) => `${c!.x},${c!.y}`).join(' ')} fill={color} fillOpacity={0.16} pointerEvents="none" />;
+    return <polygon points={path(corners.map((c) => c!))} fill={color} fillOpacity={0.16} pointerEvents="none" />;
+  };
+  const curveHighlight = (look: string, color: string) =>
+    scene.curves
+      .filter((c) => c.look === look)
+      .map((c) => <polyline key={c.key} points={path(c.points)} fill="none" stroke={color} strokeOpacity={0.45} strokeWidth={style.lineWidth + 7} strokeLinecap="round" pointerEvents="none" />);
+  const shapeHighlight = (key: string, color: string) => {
+    const face = scene.faces.find((f) => f.key === key);
+    return face && <polygon data-highlight={key} points={path(face.points)} fill={color} fillOpacity={0.2} stroke={color} strokeOpacity={0.5} strokeWidth={1.5} pointerEvents="none" />;
   };
 
   const preview = () => {
@@ -163,6 +180,19 @@ export const SolidCanvas: React.FC<Props> = ({
       </g>
     );
     if (tool === 'free') return ghost(hover.x, hover.y, 'Điểm mới');
+    if (tool === 'paint' || tool === 'hide') {
+      const hit = pickItem(scene, hover, { includeOff: tool === 'hide', faces: tool === 'paint', fontSize: style.fontSize });
+      if (!hit) return null;
+      const color = tool === 'hide' ? '#d97706' : (paint ?? '#64748b');
+      if (hit.type === 'face') return shapeHighlight(hit.key, color);
+      if (hit.type === 'curve') return curveHighlight(hit.key, color);
+      if (hit.type === 'line') {
+        const line = scene.lines.find((l) => l.look === hit.key)!;
+        return lineHighlight([line.from, line.to], color, 'preview');
+      }
+      const point = scene.dots.find((p) => p.look === hit.key)!;
+      return <circle cx={point.x} cy={point.y} r={11} fill={color} fillOpacity={0.35} stroke={color} strokeWidth={1.5} pointerEvents="none" />;
+    }
     if (tool === 'on') {
       const spec = pickOnObject(doc, view, frame, hover);
       if (!spec) return null;
@@ -172,6 +202,16 @@ export const SolidCanvas: React.FC<Props> = ({
       if (!at) return null;
       const names = resolvePoints(doc);
       const nameOf = (id: string) => names.find((p) => p.id === id)?.name ?? '';
+      if (spec.type === 'rim' || spec.type === 'disk') {
+        const curve = roundCurves(buildMesh(doc)).find((c) => c.center === spec.of[0]);
+        return (
+          <>
+            {spec.type === 'rim' && curve && curveHighlight(curveKey(curve.id), '#059669')}
+            {spec.type === 'disk' && curve && (curve.id === 'equator' ? curveHighlight(curveKey(curve.id), '#059669') : shapeHighlight(faceKey(curve.id), '#059669'))}
+            {ghost(at.x, at.y, spec.type === 'rim' ? `Trên đường tròn tâm ${nameOf(spec.of[0])}` : `Trên mặt tròn tâm ${nameOf(spec.of[0])}`)}
+          </>
+        );
+      }
       const face = spec.type === 'face' ? pickFace(doc, view, frame, hover) : null;
       return (
         <>
@@ -206,8 +246,27 @@ export const SolidCanvas: React.FC<Props> = ({
         onPointerCancel={end}
         onPointerLeave={() => setHover(null)}
       >
+        {scene.faces
+          .filter((f) => f.color)
+          .map((f) => (
+            <polygon key={f.key} data-face={f.key} points={path(f.points)} fill={f.color} fillOpacity={FILL_OPACITY} />
+          ))}
         {tool === 'intersect' && chosenLine && lineHighlight(chosenLine, '#2563eb', 'chosen')}
-        {scene.lines.map((l) => (
+        {drawn(scene.curves).map((c) => (
+          <polyline
+            key={c.key}
+            data-curve={c.look}
+            data-hidden={c.hidden}
+            points={path(c.points)}
+            fill="none"
+            stroke={c.color ?? INK}
+            strokeOpacity={c.off ? OFF_OPACITY : 1}
+            strokeWidth={style.lineWidth}
+            strokeLinecap="round"
+            strokeDasharray={c.hidden ? dashPattern(style.lineWidth) : undefined}
+          />
+        ))}
+        {drawn(scene.lines).map((l) => (
           <line
             key={l.key}
             data-line={`${l.from}-${l.to}`}
@@ -216,16 +275,17 @@ export const SolidCanvas: React.FC<Props> = ({
             y1={l.y1}
             x2={l.x2}
             y2={l.y2}
-            stroke={INK}
+            stroke={l.color ?? INK}
+            strokeOpacity={l.off ? OFF_OPACITY : 1}
             strokeWidth={style.lineWidth}
             strokeLinecap="round"
             strokeDasharray={l.hidden ? dashPattern(style.lineWidth) : undefined}
           />
         ))}
-        {scene.dots.map((d) => (
-          <g key={d.id}>
-            {(d.extra || style.showVertexDots) && <circle cx={d.x} cy={d.y} r={style.lineWidth * 1.6} fill={INK} />}
-            {!picking && doc.points.some((p) => p.id === d.id && (p.type === 'free' || p.type === 'on' || p.type === 'face')) && (
+        {drawn(scene.dots).map((d) => (
+          <g key={d.id} opacity={d.off ? OFF_OPACITY : undefined}>
+            {(hasDot(d, style) || (tool === 'hide' && d.off)) && <circle data-dot={d.id} cx={d.x} cy={d.y} r={style.lineWidth * 1.6} fill={d.color ?? INK} />}
+            {!picking && doc.points.some((p) => p.id === d.id && MOVABLE.includes(p.type ?? '')) && (
               <circle
                 data-drag={d.id}
                 cx={d.x}
@@ -253,7 +313,7 @@ export const SolidCanvas: React.FC<Props> = ({
               fontSize={style.fontSize}
               fontStyle="italic"
               fontWeight="bold"
-              fill={INK}
+              fill={d.color ?? INK}
               className={picking ? undefined : 'cursor-move'}
               onPointerDown={(e) => {
                 if (picking) return;

@@ -1,6 +1,7 @@
 /** Đổi vị trí bấm trên màn hình thành điểm, đoạn, mặt của hình không gian. Toàn bộ là hàm thuần. */
-import { MAX_COORD, buildMesh, meshEdges, resolvePoints, type ExtraPoint, type PointSpec, type SolidDoc, type SolidMesh } from './model';
-import { facePlanes, hiddenRange, makeProjection, type Frame, type View } from './scene';
+import { MAX_COORD, buildMesh, lineKey, meshEdges, resolvePoints, roundCurves, type ExtraPoint, type PointSpec, type SolidDoc, type SolidMesh } from './model';
+import { circlePoint, hiddenByRound } from './round';
+import { facePlanes, makeProjection, segmentPieces, type Frame, type Scene, type View, type XY } from './scene';
 import { add, dot, scale, sub, type Vec3 } from './vec';
 
 export interface ScreenPoint {
@@ -55,6 +56,10 @@ export function freePosition(view: View, frame: Frame, target: ScreenPoint, from
 /** Điểm mới trên mặt phẳng đáy (có thể ở ngoài đáy); null nếu đang nhìn ngang mặt đáy */
 export function basePlanePoint(doc: SolidDoc, view: View, frame: Frame, target: ScreenPoint): PointSpec | null {
   const mesh = buildMesh(doc);
+  if (mesh.round) {
+    const hit = diskHit(mesh, view, frame, target, 'O');
+    return hit && Math.abs(hit.u) <= 6 && Math.abs(hit.v) <= 6 ? { type: 'disk', of: ['O'], ...hit, open: true } : null;
+  }
   const ids = mesh.base.map((i) => mesh.vertices[i].id);
   const of = [ids[0], ids[1], ids[ids.length - 1]];
   const [o, i, j] = of.map((id) => mesh.vertices.find((v) => v.id === id)!.p);
@@ -70,7 +75,34 @@ export interface LineHit {
   t: number;
 }
 
-/** Cạnh hoặc đoạn thẳng gần chỗ bấm nhất (ưu tiên nét thấy khi hai nét sát nhau) */
+/** Vị trí (u, v) của `target` trên mặt phẳng ngang qua tâm `center` của khối tròn, đơn vị là bán kính */
+function diskHit(mesh: SolidMesh, view: View, frame: Frame, target: ScreenPoint, center: string) {
+  const o = mesh.vertices.find((v) => v.id === center)!.p;
+  const { r } = mesh.round!;
+  return unproject(view, frame, target, o, [r, 0, 0], [0, 0, r]);
+}
+
+/** Điểm trên đường tròn ngang tâm `center` gần chỗ bấm nhất */
+function nearestOnCircle(view: View, frame: Frame, target: ScreenPoint, center: Vec3, r: number) {
+  const screen = toScreen(view, frame);
+  const distance = (t: number) => {
+    const p = screen(circlePoint(center, r, t));
+    return Math.hypot(p.x - target.x, p.y - target.y);
+  };
+  let best = 0;
+  let bestDistance = distance(0);
+  // Dò thô rồi thu hẹp quanh vị trí tốt nhất
+  for (let step = 1 / 90, from = 0, count = 90; step > 1e-5; step /= 10, from = best - step * 10, count = 20) {
+    for (let i = 0; i <= count; i++) {
+      const t = from + i * step;
+      const d = distance(t);
+      if (d < bestDistance) [best, bestDistance] = [t, d];
+    }
+  }
+  return { t: ((best % 1) + 1) % 1, distance: bestDistance };
+}
+
+/** Cạnh hoặc đoạn thẳng gần chỗ bấm nhất (ưu tiên nét thấy khi hai nét sát nhau); bỏ qua đoạn đang ẩn */
 export function pickLine(doc: SolidDoc, view: View, frame: Frame, target: ScreenPoint, reach = 12): LineHit | null {
   const mesh = buildMesh(doc);
   const planes = facePlanes(mesh);
@@ -81,6 +113,7 @@ export function pickLine(doc: SolidDoc, view: View, frame: Frame, target: Screen
   let best: LineHit | null = null;
   let bestScore = reach;
   for (const [from, to] of pairs) {
+    if (doc.looks[lineKey(from, to)]?.hidden) continue;
     const p = byId.get(from);
     const q = byId.get(to);
     if (!p || !q) continue;
@@ -91,8 +124,8 @@ export function pickLine(doc: SolidDoc, view: View, frame: Frame, target: Screen
     const t = Math.min(1, Math.max(0, ((target.x - a.x) * (b.x - a.x) + (target.y - a.y) * (b.y - a.y)) / len2));
     const distance = Math.hypot(target.x - a.x - t * (b.x - a.x), target.y - a.y - t * (b.y - a.y));
     if (distance >= reach) continue;
-    const range = hiddenRange(p.p, q.p, planes, toViewer);
-    const score = distance + (range && t >= range[0] && t <= range[1] ? 3 : 0);
+    const behind = segmentPieces(mesh, planes, toViewer, p.p, q.p).some((piece) => piece.hidden && t >= piece.from && t <= piece.to);
+    const score = distance + (behind ? 3 : 0);
     if (score < bestScore) {
       bestScore = score;
       best = { from, to, t };
@@ -129,8 +162,38 @@ export function pickFace(doc: SolidDoc, view: View, frame: Frame, target: Screen
 export function pickOnObject(doc: SolidDoc, view: View, frame: Frame, target: ScreenPoint): PointSpec | null {
   const line = pickLine(doc, view, frame, target);
   if (line) return { type: 'on', of: [line.from, line.to], t: line.t };
+  const mesh = buildMesh(doc);
+  if (mesh.round) return pickOnRound(doc, mesh, view, frame, target);
   const face = pickFace(doc, view, frame, target);
   if (face) return { type: 'face', of: [face.ids[0], face.ids[1], face.ids[face.ids.length - 1]], u: face.u, v: face.v };
+  return null;
+}
+
+/** Khối tròn: ưu tiên đường tròn, sau đó tới các mặt tròn */
+function pickOnRound(doc: SolidDoc, mesh: SolidMesh, view: View, frame: Frame, target: ScreenPoint, reach = 12): PointSpec | null {
+  const round = mesh.round!;
+  const { toViewer } = makeProjection(view);
+  const centerOf = (id: string) => mesh.vertices.find((v) => v.id === id)!.p;
+  let best: PointSpec | null = null;
+  let bestScore = reach;
+  for (const curve of roundCurves(mesh)) {
+    if (doc.looks[`c:${curve.id}`]?.hidden) continue;
+    const center = centerOf(curve.center);
+    const hit = nearestOnCircle(view, frame, target, center, round.r);
+    if (hit.distance >= reach) continue;
+    const score = hit.distance + (hiddenByRound(circlePoint(center, round.r, hit.t), round, toViewer) ? 3 : 0);
+    if (score < bestScore) {
+      bestScore = score;
+      best = { type: 'rim', of: [curve.center], t: hit.t };
+    }
+  }
+  if (best) return best;
+  // Mặt đáy trên của hình trụ nằm trước khi nhìn từ trên xuống
+  const centers = round.type === 'tru' ? (toViewer[1] > 0 ? ["O'", 'O'] : ['O', "O'"]) : ['O'];
+  for (const center of centers) {
+    const hit = diskHit(mesh, view, frame, target, center);
+    if (hit && Math.hypot(hit.u, hit.v) <= 1 + 1e-9) return { type: 'disk', of: [center], ...hit };
+  }
   return null;
 }
 
@@ -174,5 +237,70 @@ export function dragPoint(doc: SolidDoc, view: View, frame: Frame, point: ExtraP
     }
     return { u, v };
   }
+  if (point.type === 'rim') {
+    const center = byId.get(point.of[0]);
+    return center && mesh.round ? { t: nearestOnCircle(view, frame, target, center, mesh.round.r).t } : null;
+  }
+  if (point.type === 'disk') {
+    if (!mesh.round) return null;
+    const hit = diskHit(mesh, view, frame, target, point.of[0]);
+    if (!hit) return null;
+    if (point.open) return Math.abs(hit.u) <= 6 && Math.abs(hit.v) <= 6 ? hit : null;
+    // Giữ điểm ở trong mặt tròn
+    const over = Math.max(1, Math.hypot(hit.u, hit.v));
+    return { u: hit.u / over, v: hit.v / over };
+  }
   return null;
+}
+
+export interface ItemHit {
+  type: 'point' | 'line' | 'curve' | 'face';
+  /** Khóa trong doc.looks hoặc doc.fills */
+  key: string;
+}
+
+const toSegment = (p: XY, a: XY, b: XY) => {
+  const len2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  const t = len2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len2)) : 0;
+  return Math.hypot(p.x - a.x - t * (b.x - a.x), p.y - a.y - t * (b.y - a.y));
+};
+
+const insidePolygon = (p: XY, polygon: XY[]) =>
+  polygon.reduce((inside, a, i) => {
+    const b = polygon[(i + 1) % polygon.length];
+    return a.y > p.y !== b.y > p.y && p.x < a.x + ((p.y - a.y) / (b.y - a.y)) * (b.x - a.x) ? !inside : inside;
+  }, false);
+
+/**
+ * Đối tượng trên hình đang vẽ tại chỗ bấm, cho công cụ tô màu và ẩn/hiện.
+ * Ưu tiên điểm, rồi tới đoạn và đường cong, cuối cùng là mặt. `includeOff`: tính cả thứ đang ẩn.
+ */
+export function pickItem(scene: Scene, target: ScreenPoint, { includeOff = false, faces = true, fontSize = 22 } = {}): ItemHit | null {
+  const usable = <T extends { off: boolean }>(list: T[]) => list.filter((item) => includeOff || !item.off);
+  let key: string | null = null;
+  let best = 13;
+  for (const d of usable(scene.dots)) {
+    // Bấm trúng chữ cũng tính là bấm điểm đó
+    const onLabel = Math.hypot(target.x - d.labelX, target.y - d.labelY) <= fontSize * 0.5;
+    const distance = Math.min(Math.hypot(target.x - d.x, target.y - d.y), onLabel ? 8 : Infinity);
+    if (distance < best) [key, best] = [d.look, distance];
+  }
+  if (key) return { type: 'point', key };
+
+  let hit: ItemHit | null = null;
+  best = 10;
+  // Nét khuất bị trừ điểm để nét thấy được chọn khi hai nét sát nhau
+  const consider = (type: 'line' | 'curve', look: string, distance: number, behind: boolean) => {
+    const score = distance + (behind ? 3 : 0);
+    if (score < best) [hit, best] = [{ type, key: look }, score];
+  };
+  for (const l of usable(scene.lines)) consider('line', l.look, toSegment(target, { x: l.x1, y: l.y1 }, { x: l.x2, y: l.y2 }), l.hidden);
+  for (const c of usable(scene.curves)) {
+    consider('curve', c.look, Math.min(...c.points.slice(1).map((b, i) => toSegment(target, c.points[i], b))), c.hidden);
+  }
+  if (hit || !faces) return hit;
+
+  // scene.faces xếp từ sau ra trước
+  const face = [...scene.faces].reverse().find((f) => insidePolygon(target, f.points));
+  return face ? { type: 'face', key: face.key } : null;
 }
